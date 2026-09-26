@@ -1,0 +1,33 @@
+# Your settings. setup_mac.sh copies this to config.yaml -- edit config.yaml.
+# Only list what you want to change; every option (with explanations) is in
+# video_automation/default_config.yaml.
+
+output_dir: ./output
+
+video:
+  length: voiceover            # finished video is as long as the voiceover
+  original_audio_volume: 0.0   # raise to e.g. 0.15 to keep the clip's own sound under the voiceover
+
+profanity:
+  mode: asterisk               # F*** in captions (asterisk | full | remove | replace)
+  audio: "off"                 # "mute" or "beep" to also silence curse words in the audio
+  extra_words: []              # e.g. [damn, hell]
+  allowed_words: []
+
+captions:
+  font: Arial Black
+  highlight_color: "#FFD700"
+  max_words: 4
+  position: bottom
+
+exports:
+  final:
+    format: original           # original | vertical | square
+  camtasia:
+    enabled: true              # uncaptioned copy + .srt for Camtasia
+
+clips:
+  enabled: true
+  format: vertical
+  fill: blur                   # blur | crop
+  max_length: 60

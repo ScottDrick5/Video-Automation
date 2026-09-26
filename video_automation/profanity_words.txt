@@ -1,0 +1,100 @@
+# Words censored in captions. One per line, case-insensitive.
+# A trailing * matches any word that starts with it (fuck* -> fucking, fucker, ...).
+# Words without * must match exactly, so "ass" does not catch "class" or "assume".
+# Add your own in config.yaml (profanity.extra_words) instead of editing this file.
+
+fuck*
+motherfuck*
+mothafuck*
+fck
+fcking
+fuk
+fukin
+fuckin
+effing
+shit*
+bullshit*
+horseshit*
+dipshit*
+apeshit
+batshit
+bitch*
+sonofabitch
+ass
+asses
+asshole*
+arse
+arsehole*
+jackass
+dumbass
+badass
+fatass
+smartass
+kickass
+bastard*
+cunt*
+dick
+dicks
+dickhead*
+cock
+cocks
+cocksuck*
+pussy
+pussies
+twat*
+wanker*
+wank
+wanking
+prick
+pricks
+slut*
+whore*
+piss
+pissed
+pissing
+pisses
+goddamn*
+goddam
+dammit
+damnit
+crap
+crappy
+tits
+titties
+boobs
+cum
+cumming
+jizz
+dildo*
+blowjob*
+handjob*
+porn*
+milf
+thot
+hoe
+hoes
+douche*
+bollocks
+bugger
+choad
+# slurs
+nigg*
+nigga*
+fag
+fags
+faggot*
+retard
+retards
+retarded
+tranny
+spic
+spics
+chink
+chinks
+kike
+kikes
+wetback*
+# Mild words -- uncomment (remove the #) if you want these censored too
+# damn
+# hell
+# sucks

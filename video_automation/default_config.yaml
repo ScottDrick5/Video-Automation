@@ -1,0 +1,76 @@
+# Default settings. Copy config.example.yaml to config.yaml and change only
+# what you need -- anything you leave out falls back to these values.
+
+output_dir: ./output
+
+video:
+  # How long the finished video is:
+  #   voiceover -> as long as the voiceover (source video is trimmed, or looped if too short)
+  #   video     -> as long as the source video
+  length: voiceover
+  tail_padding: 0.5            # seconds of video kept after the voiceover ends
+  voiceover_start: 0.0         # seconds into the video the voiceover begins
+  voiceover_volume: 1.0
+  original_audio_volume: 0.0   # 0 = mute the source video's audio, 0.15 = keep it quietly underneath
+
+transcription:
+  model: small.en              # tiny.en | base.en | small.en | medium.en | large-v3
+  language: en
+  device: auto
+  compute_type: int8
+
+profanity:
+  enabled: true
+  # How curse words appear in captions:
+  #   asterisk   -> F***
+  #   full       -> ****
+  #   remove     -> word dropped from captions
+  #   replace    -> replaced with `replacement`
+  mode: asterisk
+  replacement: "[bleep]"
+  extra_words: []              # more words to censor (end with * to match anything starting with it)
+  allowed_words: []            # words from the built-in list you do NOT want censored
+  # Also silence the audio under curse words (useful for monetization):
+  #   off | mute | beep
+  audio: "off"
+
+captions:
+  font: Arial Black
+  font_scale: 1.0              # 1.0 = about 5% of the video height
+  uppercase: true
+  strip_punctuation: true      # drop commas/periods from burned-in captions
+  primary_color: "#FFFFFF"
+  highlight_color: "#FFD700"   # colour of the word being spoken
+  highlight_words: true        # TikTok-style word-by-word highlight
+  outline_color: "#000000"
+  outline: 4
+  shadow: 0
+  max_words: 4                 # max words on screen at once
+  max_chars: 22
+  position: bottom             # bottom | middle | top
+  margin_percent: 18           # distance from the top/bottom edge, % of height
+
+exports:
+  final:
+    enabled: true              # captioned video, ready to post
+    format: original           # original | vertical | square
+    fill: blur                 # used when format changes shape: blur | crop
+  camtasia:
+    enabled: true              # same video WITHOUT burned captions + .srt file to import into Camtasia
+
+clips:
+  enabled: true
+  format: vertical             # vertical (9:16) | square | original
+  fill: blur                   # blur = fit video over a blurred copy, crop = zoom to fill
+  mode: auto                   # auto = split at sentence breaks, manual = use `segments`
+  max_length: 60               # seconds (auto mode)
+  min_length: 15               # seconds (auto mode); shorter leftovers merge into the previous clip
+  max_clips: 0                 # 0 = no limit
+  segments: []                 # manual mode, e.g. - {start: 0, end: 32.5, name: hook}
+
+encoding:
+  crf: 20                      # lower = better quality, bigger file
+  preset: medium
+  audio_bitrate: 192k
+  vertical_size: [1080, 1920]
+  square_size: [1080, 1080]
