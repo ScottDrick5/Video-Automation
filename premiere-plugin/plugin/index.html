@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { padding: 12px; color: #ddd; font-size: 13px; }
+      h3 { margin: 4px 0 8px; }
+      .step { display: flex; align-items: center; margin: 6px 0; }
+      .step sp-button { width: 190px; margin-right: 8px; }
+      .status { font-size: 12px; }
+      .ok { color: #6ccf6c; }
+      .fail { color: #ff7a7a; }
+      #log { margin-top: 12px; padding: 8px; border: 1px solid #555; height: 260px; overflow-y: scroll; font-family: monospace; font-size: 11px; white-space: pre-wrap; }
+      .hint { color: #999; font-size: 11px; margin: 2px 0 10px; }
+    </style>
+  </head>
+  <body>
+    <h3>VidAuto test</h3>
+    <div class="hint">Use a COPY of a voiceover. Run the steps in order. Nothing is deleted.</div>
+
+    <div class="step"><sp-button id="b0" variant="secondary">0. Check setup</sp-button><span class="status" id="s0"></span></div>
+    <div class="step"><sp-button id="b1">1. Import voiceover</sp-button><span class="status" id="s1"></span></div>
+    <div class="step"><sp-button id="b2">2. Transcribe</sp-button><span class="status" id="s2"></span></div>
+    <div class="step"><sp-button id="b3">3. Find cut point</sp-button><span class="status" id="s3"></span></div>
+    <div class="step"><sp-button id="b4">4. Fix A-Hole</sp-button><span class="status" id="s4"></span></div>
+    <div class="step"><sp-button id="b5">5. Build sequence</sp-button><span class="status" id="s5"></span></div>
+    <div class="step"><sp-button id="b6">6. Create captions</sp-button><span class="status" id="s6"></span></div>
+    <div class="step"><sp-button id="b7">7. Test export</sp-button><span class="status" id="s7"></span></div>
+
+    <div class="step" style="margin-top: 12px">
+      <sp-button id="copy" variant="secondary">Copy log</sp-button>
+      <span class="hint">Paste the log into Claude instead of a screenshot.</span>
+    </div>
+    <div id="log"></div>
+    <script src="main.js"></script>
+  </body>
+</html>

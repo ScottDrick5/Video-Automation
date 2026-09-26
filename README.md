@@ -1,5 +1,7 @@
 # Video Automation
 
+> **Looking for the Premiere Pro plugin test?** See [`premiere-plugin/README.md`](premiere-plugin/README.md). The standalone tool described below is an earlier version, kept for reference.
+
 Drop a video and your voiceover into a folder. Your Mac hands back:
 
 | File | What it's for |
