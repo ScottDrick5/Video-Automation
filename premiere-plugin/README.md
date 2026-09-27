@@ -28,6 +28,20 @@ and unzip it. You need the `premiere-plugin` folder.
 Open the **Creative Cloud** app, search for **UXP Developer Tool**, and install it (free).
 
 ### 4. Load the plugin
+
+There are two ways. If one gives an error, try the other and send Claude the error text.
+
+**Way 1: installer file (no Developer Tool)**
+1. Make sure the **Creative Cloud** app is open and you're signed in. Adobe's installer only works then.
+2. Quit Premiere.
+3. Double-click `premiere-plugin/Install Plugin.command`. If macOS won't open it: right-click → **Open** → **Open**.
+4. It tries two versions of the installer file and saves what happened to `vidauto-install-log.txt` on your Desktop.
+5. If it says **Installed**, open Premiere and look under **Window → UXP Plugins → VidAuto Test**.
+6. If it fails, send Claude the log text.
+
+You can also try double-clicking `premiere-plugin/dist/VidAutoTest.ccx` directly. That opens Creative Cloud's installer.
+
+**Way 2: UXP Developer Tool**
 1. Open Premiere and your project.
 2. Open **UXP Developer Tool** and click **Add Plugin**.
 3. Pick `premiere-plugin/plugin/manifest.json`.
