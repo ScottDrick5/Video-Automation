@@ -50,11 +50,12 @@ test("perspective, title and file names", () => {
   assert.ok(!r.isLimitMessage("There is no limit to how much she lied."));
 });
 
-test("next free date folders (mm-dd-yy; old 9-29-26 style names still count)", () => {
+test("next free date folders (9-28-26, 10-02-26; other spellings of a date still count)", () => {
   const start = new Date(2026, 8, 28);
-  assert.strictEqual(r.folderName(start), "09-28-26");
-  const taken = new Set(["9-28-26", "09-29-26", "10-01-26"]);
-  assert.deepStrictEqual(r.nextFreeDates(start, taken, 3), ["09-30-26", "10-02-26", "10-03-26"]);
+  assert.strictEqual(r.folderName(start), "9-28-26");
+  assert.strictEqual(r.folderName(new Date(2026, 9, 2)), "10-02-26");
+  const taken = new Set(["9-28-26", "09-29-26", "10-1-26"]);
+  assert.deepStrictEqual(r.nextFreeDates(start, taken, 3), ["9-30-26", "10-02-26", "10-03-26"]);
 });
 
 test("ChatGPT's favourite title", () => {

@@ -45,7 +45,7 @@ Double-click `premiere-plugin/stories/Get Stories.command` and type how many sto
 4. asks "Can you give me a good, few-word title for this script?" and takes the one ChatGPT marks as its favorite (⭐),
 5. switches AI Voice Saver's voice if needed (and reloads the page), clicks its download button and waits for the
    file in Downloads,
-6. moves the voiceover into the next date folder that doesn't exist yet (named mm-dd-yy, e.g. 09-28-26; it creates
+6. moves the voiceover into the next date folder that doesn't exist yet (named like 9-28-26 or 10-02-26; it creates
    it) and writes `title.txt`.
 
 Used stories are listed in `/Users/drick/Documents/AITA/vidauto-stories.json` so none is used twice; the full log is

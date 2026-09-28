@@ -120,13 +120,13 @@ function favoriteTitle(reply) {
   return first ? tidy(first) : cleanTitle(text);
 }
 
-// Date folder name like yours: mm-dd-yy, e.g. 09-28-26
+// Date folder name like yours: month without a leading zero, two-digit day, two-digit year: 9-28-26, 10-02-26
 function pad2(n) {
   return String(n).padStart(2, "0");
 }
 
 function folderName(date) {
-  return `${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}-${String(date.getFullYear()).slice(-2)}`;
+  return `${date.getMonth() + 1}-${pad2(date.getDate())}-${String(date.getFullYear()).slice(-2)}`;
 }
 
 // "9-28-26" and "09-28-26" are the same date
