@@ -25,7 +25,8 @@ ask() {
 }
 
 ask "the SEARCH box at the top of the Captions tab";  S=$P
-ask "the REPLACE button under the search box";          T=$P
+ask "the REPLACE button with the circular-arrow icon, directly UNDER the search box on the LEFT
+     (not the small Replace button at the right end of the Replace with row)";  T=$P
 ask "the 'REPLACE WITH' box";                            F=$P
 ask "the 'REPLACE ALL' button";                          A=$P
 

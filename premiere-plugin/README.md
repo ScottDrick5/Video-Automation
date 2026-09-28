@@ -86,7 +86,8 @@ Text panel as its own window so it can find it on any screen.
 2. Open its **Captions** tab (a caption track must exist), type anything in the search box, and click
    **Replace** so the *Replace with* row shows.
 3. Double-click `premiere-plugin/helper/Record Text Panel Positions.command` and point at each item when asked:
-   the search box, the Replace button, the Replace with box, and Replace all.
+   the search box, the **Replace** button with the circular-arrow icon directly under the search box (not the
+   small Replace button at the right end of the Replace with row), the Replace with box, and Replace all.
 4. When it says *Saved*, click **Replace** again to close that row and clear the search box.
 
 Run it again if you resize the floating Text panel.
