@@ -63,14 +63,15 @@ function click(x, y) {
   const pt = $.CGPointMake(x, y);
   // tap 0 = HID; events 5 = mouse moved, 1 = left down, 2 = left up; button 0 = left
   const post = (type, where) => $.CGEventPost(0, $.CGEventCreateMouseEvent(null, type, where, 0));
+  // hover first: some Premiere buttons ignore a click that arrives right after the pointer moves
   post(5, pt);
-  delay(0.15);
+  delay(0.4);
   post(1, pt);
-  delay(0.08);
+  delay(0.12);
   post(2, pt);
-  delay(0.15);
+  delay(0.2);
   post(5, back);
-  return "clicked";
+  return "clicked at " + Math.round(x) + "," + Math.round(y);
 }
 
 function run(argv) {

@@ -140,7 +140,9 @@ on clickPanel(pt, wx, wy, fw, fromRight)
 		set x to wx + (item 1 of pt)
 	end if
 	set y to wy + (item 2 of pt)
-	return my winCmd("click " & x & " " & y)
+	set r to my winCmd("click " & x & " " & y)
+	my logLine("  " & r)
+	return r
 end clickPanel
 
 -- Replace ahole / a-hole / asshole with A-Hole using Find and Replace in the Captions tab of the
@@ -181,9 +183,10 @@ on fixAHole()
 				keystroke "a" using command down
 				keystroke (t as text)
 			end tell
-			delay 1
+			delay 1.2
 			if isFirst then
 				-- open the Replace row and type the replacement once; it stays for the other words
+				my logLine("Clicking Replace (opens the Replace with row)")
 				my clickPanel(togglePt, wx, wy, fw, false)
 				delay 0.7
 				my clickPanel(fieldPt, wx, wy, fw, false)
