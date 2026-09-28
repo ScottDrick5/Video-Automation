@@ -9,6 +9,7 @@ const HELPER_DIR = "/Users/Shared/VidAuto";
 const HELPER_APP = HELPER_DIR + "/VidAuto Caption Helper.app";
 const HELPER_LOG = HELPER_DIR + "/helper-log.txt";
 const TICKS_PER_SECOND = 254016000000;
+const PLUGIN_VERSION = "0.1.1";
 
 const state = { clip: null, transcript: null, cut: null, sequence: null };
 
@@ -102,7 +103,7 @@ async function activeProject() {
 // ------------------------------------------------------------------ steps
 
 async function checkSetup() {
-  log(`Premiere version: ${uxp.host.version}`);
+  log(`VidAuto Test plugin ${PLUGIN_VERSION}, Premiere ${uxp.host.version}`);
   const project = await activeProject();
   log(`Project: ${project.name}`);
   const seq = await project.getActiveSequence();
@@ -178,6 +179,48 @@ async function findCut() {
   return `cut at ${cut.seconds.toFixed(2)}s`;
 }
 
+function describe(value) {
+  if (value === null || value === undefined) return String(value);
+  const name = value.constructor && value.constructor.name;
+  return `${typeof value}${name ? " " + name : ""}`;
+}
+
+// Premiere versions differ in how a transcript is turned back into TextSegments, so try each known way
+// and log exactly which part fails.
+async function importTranscript(project, clip, json) {
+  log(`clip is ${describe(clip)}; Transcript.importFromJSON: ${typeof ppro.Transcript.importFromJSON}; ` +
+      `TextSegments.importFromJSON: ${typeof (ppro.TextSegments && ppro.TextSegments.importFromJSON)}`);
+  const attempts = [
+    ["Transcript.importFromJSON", async () => ppro.Transcript.importFromJSON(json)],
+    ["TextSegments.importFromJSON (callback)", () => new Promise((resolve, reject) => {
+      let settled = false;
+      const ok = ppro.TextSegments.importFromJSON(json, (segments) => { settled = true; resolve(segments); });
+      log(`  TextSegments.importFromJSON returned ${ok}`);
+      setTimeout(() => settled || reject(new Error("callback never called")), 5000);
+    })],
+  ];
+  const errors = [];
+  for (const [name, make] of attempts) {
+    let part = "making TextSegments";
+    try {
+      const segments = await make();
+      log(`  ${name} gave ${describe(segments)}`);
+      if (!segments || typeof segments !== "object") throw new Error(`got ${describe(segments)}`);
+      part = "creating the import action";
+      const action = ppro.Transcript.createImportTextSegmentsAction(segments, clip);
+      log(`  import action is ${describe(action)}`);
+      part = "running the change";
+      transaction(project, "VidAuto: fix A-Hole", () => [action]);
+      log(`  ${name}: worked`);
+      return;
+    } catch (err) {
+      log(`  ${name}: failed while ${part}: ${err.message || err}`);
+      errors.push(`${name} (${part})`);
+    }
+  }
+  throw new Error("Could not put the fixed transcript back: " + errors.join("; "));
+}
+
 async function fixTranscript() {
   const project = await activeProject();
   const clip = need(state.clip, "Run step 1 first");
@@ -186,8 +229,7 @@ async function fixTranscript() {
   if (!changes.length) return "nothing to change";
   const json = JSON.stringify(transcript);
   await saveToDataFolder("transcript-fixed.json", json);
-  const segments = ppro.Transcript.importFromJSON(json);
-  transaction(project, "VidAuto: fix A-Hole", () => [ppro.Transcript.createImportTextSegmentsAction(segments, clip)]);
+  await importTranscript(project, clip, json);
   // read it back to prove Premiere kept the change
   const back = JSON.parse(await ppro.Transcript.exportToJSON(clip));
   const count = flattenWords(back).filter((w) => w.text.includes("A-Hole")).length;
