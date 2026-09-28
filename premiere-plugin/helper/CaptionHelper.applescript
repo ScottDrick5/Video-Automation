@@ -187,19 +187,30 @@ on fixAHole(terms)
 			logLine("RESULT: Text panel positions not recorded yet. Run 'Record Text Panel Positions.command'.")
 			return
 		end try
-		set searchPt to my numbersIn(item 1 of lns)
-		set togglePt to my numbersIn(item 2 of lns)
-		set fieldPt to my numbersIn(item 3 of lns)
-		set allPt to my numbersIn(item 4 of lns)
-		set pw to item 4 of searchPt
-		set ph to item 5 of searchPt
-
+		-- one block of 4 lines per recorded Text panel size (one per screen setup); use the one that's open
 		set p to premiereProcess()
 		tell application "System Events" to set frontmost of p to true
 		delay 0.5
-		set found to my winCmd("find " & pw & " " & ph & " 3")
+		set found to "none"
+		set sizes to ""
+		repeat with attempt from 1 to 3
+			repeat with b from 0 to ((count of lns) div 4) - 1
+				if found is "none" then
+					set searchPt to my numbersIn(item (b * 4 + 1) of lns)
+					set pw to item 4 of searchPt
+					set ph to item 5 of searchPt
+					if attempt is 1 then set sizes to sizes & " " & pw & "x" & ph
+					set found to my winCmd("find " & pw & " " & ph & " 0.5")
+					if found is not "none" then
+						set togglePt to my numbersIn(item (b * 4 + 2) of lns)
+						set fieldPt to my numbersIn(item (b * 4 + 3) of lns)
+						set allPt to my numbersIn(item (b * 4 + 4) of lns)
+					end if
+				end if
+			end repeat
+		end repeat
 		if found is "none" then
-			logLine("RESULT: the floating Text panel (" & pw & "x" & ph & ") was not found. Is it undocked and the same size as when recorded?")
+			logLine("RESULT: the floating Text panel was not found at any recorded size (" & sizes & " ). Is it undocked? If you moved it to another screen or resized it, run 'Record Text Panel Positions.command' again.")
 			return
 		end if
 		set {wx, wy, fw, fh} to my numbersIn(found)

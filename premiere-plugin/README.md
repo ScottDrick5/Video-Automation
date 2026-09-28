@@ -120,7 +120,9 @@ Text panel as its own window so it can find it on any screen.
    small Replace button at the right end of the Replace with row), the Replace with box, and Replace all.
 4. When it says *Saved*, click **Replace** again to close that row and clear the search box.
 
-Run it again if you resize the floating Text panel.
+Run it again if you resize the floating Text panel. If you work with different screen setups (for example
+the laptop screen on its own and your desk monitors), record once in each setup: every size is kept, and the
+helper uses whichever one is open.
 
 ### 5e. Record where the AITA caption preset is (once)
 Premiere doesn't keep the AITA preset selected, so the helper picks it in the Create captions window.
