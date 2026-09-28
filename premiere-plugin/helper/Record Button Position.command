@@ -9,11 +9,15 @@ TOOL="/Users/Shared/VidAuto/windows.js"
 [ -f "$TOOL" ] || cp windows.js "$TOOL" 2>/dev/null
 OUT="/Users/Shared/VidAuto/create-button.txt"
 
+# Spoken prompts and sounds, so you can follow along while Premiere covers this window
+speak() { say "$1" 2>/dev/null || true; }
+countdown() { for ((i = $1; i > 0; i--)); do echo "  recording in $i..."; afplay /System/Library/Sounds/Tink.aiff 2>/dev/null & sleep 1; done; }
+gotit() { afplay /System/Library/Sounds/Glass.aiff 2>/dev/null & }
+
 echo "Put the mouse pointer on the blue 'Create captions' button in Premiere and keep it still."
-for i in 5 4 3 2 1; do
-  echo "  recording in $i..."
-  sleep 1
-done
+speak "Point at the Create captions button"
+countdown 5
+gotit
 
 REC=$(osascript -l JavaScript "$TOOL" record 2>&1)
 if [[ "$REC" =~ ^-?[0-9]+,-?[0-9]+,[0-9]+,[0-9]+$ ]]; then

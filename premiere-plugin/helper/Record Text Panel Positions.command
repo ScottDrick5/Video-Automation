@@ -10,10 +10,16 @@ TOOL="/Users/Shared/VidAuto/windows.js"
 cp windows.js "$TOOL" 2>/dev/null
 OUT="/Users/Shared/VidAuto/text-panel.txt"
 
-ask() {
+# Spoken prompts and sounds, so you can follow along while Premiere covers this window
+speak() { say "$1" 2>/dev/null || true; }
+countdown() { for ((i = $1; i > 0; i--)); do echo "  recording in $i..."; afplay /System/Library/Sounds/Tink.aiff 2>/dev/null & sleep 1; done; }
+gotit() { afplay /System/Library/Sounds/Glass.aiff 2>/dev/null & }
+
+ask() { # $1 = what to point at, $2 = what to say out loud
   echo
   echo "Point at: $1  (keep the mouse still)"
-  for i in 5 4 3 2 1; do echo "  recording in $i..."; sleep 1; done
+  speak "$2"
+  countdown 5
   P=$(osascript -l JavaScript "$TOOL" point 2>&1)
   if ! [[ "$P" =~ ^-?[0-9]+,-?[0-9]+,-?[0-9]+,[0-9]+,[0-9]+$ ]]; then
     echo "Could not record: $P"
@@ -22,13 +28,15 @@ ask() {
     exit 1
   fi
   echo "  got $P"
+  gotit
 }
 
-ask "the SEARCH box at the top of the Captions tab";  S=$P
+ask "the SEARCH box at the top of the Captions tab" "Point at the search box";  S=$P
 ask "the REPLACE button with the circular-arrow icon, directly UNDER the search box on the LEFT
-     (not the small Replace button at the right end of the Replace with row)";  T=$P
-ask "the 'REPLACE WITH' box";                            F=$P
-ask "the 'REPLACE ALL' button";                          A=$P
+     (not the small Replace button at the right end of the Replace with row)" "Point at the Replace button under the search box";  T=$P
+ask "the 'REPLACE WITH' box" "Point at the replace with box";  F=$P
+ask "the 'REPLACE ALL' button" "Point at replace all";  A=$P
+speak "Done. Click Replace to close the row."
 
 IFS=, read -r _ _ _ W H <<< "$S"
 for V in "$T" "$F" "$A"; do

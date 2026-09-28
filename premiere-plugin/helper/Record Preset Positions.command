@@ -15,10 +15,16 @@ if [ ! -f "$BUTTON" ]; then
 fi
 IFS=, read -r _ _ W H < "$BUTTON"
 
-ask() { # $1 = what to point at, $2 = seconds
+# Spoken prompts and sounds, so you can follow along while Premiere covers this window
+speak() { say "$1" 2>/dev/null || true; }
+countdown() { for ((i = $1; i > 0; i--)); do echo "  recording in $i..."; afplay /System/Library/Sounds/Tink.aiff 2>/dev/null & sleep 1; done; }
+gotit() { afplay /System/Library/Sounds/Glass.aiff 2>/dev/null & }
+
+ask() { # $1 = what to point at, $2 = seconds, $3 = what to say out loud
   echo
   echo "Point at: $1  (keep the mouse still)"
-  for ((i = $2; i > 0; i--)); do echo "  recording in $i..."; sleep 1; done
+  speak "$3"
+  countdown "$2"
   P=$(osascript -l JavaScript "$TOOL" rel "$W" "$H" 2>&1)
   if ! [[ "$P" =~ ^-?[0-9]+,-?[0-9]+$ ]]; then
     echo "Could not record: $P"
@@ -26,12 +32,13 @@ ask() { # $1 = what to point at, $2 = seconds
     read -n 1 -s -r -p "Press any key to close."; exit 1
   fi
   echo "  got $P"
+  gotit
 }
 
-ask "the 'Caption preset' menu (the box that says Subtitle default / AITA)" 5; MENU=$P
+ask "the 'Caption preset' menu (the box that says Subtitle default / AITA)" 5 "Point at the caption preset menu"; MENU=$P
 echo
 echo "Now CLICK that menu so its list opens, then rest the pointer on AITA in the list."
-ask "AITA in the open list" 8; ITEM=$P
+ask "AITA in the open list" 8 "Click the menu open, then point at AITA"; ITEM=$P
 
 printf "%s\n%s\n" "$MENU" "$ITEM" > "$OUT"
 echo

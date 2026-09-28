@@ -97,6 +97,10 @@ search **caption**, and under **Text Panel → Create Captions** click the Short
 After rebuilding the helper, macOS treats it as a new app: in **System Settings → Privacy & Security →
 Accessibility**, remove the old *VidAuto Caption Helper* entry (select it, click **−**) and allow the new one.
 
+The three *Record…* files below talk you through each spot out loud (turn your sound on), tick once a
+second while counting down, and chime when a spot is recorded, so it doesn't matter if Premiere covers the
+Terminal window.
+
 ### 5c. Record where the Create captions button is (once)
 Premiere opens the Create captions window without making it active and hides it from helpers, so the helper
 finds that window by its size and clicks the button inside it. The spot is measured from the window's corner,
