@@ -24,7 +24,11 @@ and never deletes anything.
      the last two share the time evenly, and if that is still too short every clip gets the same length),
      swaps the title to (Part 1), (Part 2)..., puts the arrow 5 seconds into each clip, and exports
      `AITA - <title> (Part 1).mp4` and so on into the date folder.
-5. If there isn't enough video left for a voiceover, it moves to the next source video; if there is none, it
+5. The first time a source video is used, your Mac makes a Premiere-friendly copy of it (standard H.264, same
+   size) in `/Users/drick/Documents/AITA/Converted Source Video/`, using macOS's own converter. That takes a few
+   minutes once per video and keeps Premiere's playback and exports fast whatever the download's encoding.
+   You can delete a copy once its video is used up.
+6. If there isn't enough video left for a voiceover, it moves to the next source video; if there is none, it
    stops and tells you before building anything.
 
 The panel shows the current source video and how much is left. To start the next video at a particular point

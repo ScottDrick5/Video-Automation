@@ -297,17 +297,43 @@ on makeOverlays()
 	end try
 end makeOverlays
 
+-- Convert a source video into a Premiere-friendly copy (standard 8-bit H.264, same size) with macOS's own
+-- converter. /Users/Shared/VidAuto/convert-job.txt holds the source path and the copy's path. The copy is
+-- written under a temporary name and renamed when complete, so a half-finished file is never used.
+on convertVideo()
+	do shell script "mkdir -p /Users/Shared/VidAuto && : > " & quoted form of logPath
+	set progressPath to "/Users/Shared/VidAuto/convert-progress.txt"
+	try
+		set lns to paragraphs of (do shell script "cat /Users/Shared/VidAuto/convert-job.txt")
+		set inPath to item 1 of lns
+		set outPath to item 2 of lns
+		set tmpPath to (text 1 thru -5 of outPath) & " (converting).mp4"
+		logLine("Converting " & inPath)
+		do shell script "mkdir -p \"$(dirname " & quoted form of outPath & ")\""
+		do shell script "/usr/bin/avconvert --source " & quoted form of inPath & " --output " & quoted form of tmpPath & " --preset PresetHighestQuality --replace --progress > " & quoted form of progressPath & " 2>&1 && mv -f " & quoted form of tmpPath & " " & quoted form of outPath
+		logLine("RESULT: converted")
+	on error errMsg number errNum
+		set tailText to ""
+		try
+			set tailText to do shell script "tail -c 400 " & quoted form of progressPath
+		end try
+		logLine("ERROR " & errNum & " converting: " & errMsg & " " & tailText)
+	end try
+end convertVideo
+
 on run
 	createCaptions()
 end run
 
 -- vidauto-helper://captions creates captions; vidauto-helper://ahole fixes A-Hole in them;
--- vidauto-helper://overlays draws the title and arrow
+-- vidauto-helper://overlays draws the title and arrow; vidauto-helper://convert converts a source video
 on open location theURL
 	if theURL starts with "vidauto-helper://ahole" then
 		my fixAHole(my wantedTerms())
 	else if theURL starts with "vidauto-helper://overlays" then
 		my makeOverlays()
+	else if theURL starts with "vidauto-helper://convert" then
+		my convertVideo()
 	else
 		createCaptions()
 	end if

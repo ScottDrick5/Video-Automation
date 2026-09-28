@@ -17,6 +17,7 @@ const CLIPS_DIR = AITA_DIR + "/New Video Clips";       // one folder per posting
 const SOURCE_DIR = AITA_DIR + "/Source Video";         // downloaded videos, used oldest first
 const EXPORT_PRESET = AITA_DIR + "/AITA.epr";          // your export settings
 const USAGE_FILE = AITA_DIR + "/vidauto-usage.json";   // how far into each source video we've used
+const CONVERTED_DIR = AITA_DIR + "/Converted Source Video"; // Premiere-friendly copies of the source videos
 
 const HELPER_DIR = "/Users/Shared/VidAuto";
 const HELPER_APP = HELPER_DIR + "/VidAuto Caption Helper.app";
@@ -26,13 +27,15 @@ const OVERLAY_JOB = HELPER_DIR + "/overlay-job.json"; // what the helper should 
 const OVERLAY_DIR = HELPER_DIR + "/overlays"; // title and arrow pictures, one folder per date
 const VO_PATH_FILE = HELPER_DIR + "/voiceover-path.txt"; // voiceover the helper copies for loudness
 const VO_WAV = HELPER_DIR + "/voiceover.wav";
+const CONVERT_JOB = HELPER_DIR + "/convert-job.txt"; // source video to convert, and where to put the copy
+const CONVERT_PROGRESS = HELPER_DIR + "/convert-progress.txt";
 const TITLE_FILE = "title.txt"; // story title, in each date folder (until Stage 0 writes it)
 const TITLE_TRACK = 1; // V2
 const ARROW_TRACK = 2; // V3
 const ARROW_SECONDS = 5;
 const CLIP_ARROW_AT = 5; // seconds into each clip
 const TICKS_PER_SECOND = 254016000000;
-const PLUGIN_VERSION = "0.4.3";
+const PLUGIN_VERSION = "0.5.0";
 
 const state = { clip: null, transcript: null, cut: null, sequence: null };
 
@@ -826,6 +829,49 @@ async function setScale(project, item, percent) {
   transaction(project, "VidAuto: fill frame", () => [scale.createSetValueAction(key, true)]);
 }
 
+// A copy of the source video made with the Mac's own converter (standard 8-bit H.264, same size), which
+// Premiere plays and exports quickly whatever the download's encoding. Made once per source video
+// (a few minutes for 20 minutes of 4K) and reused. If converting fails, the original is used.
+async function editablePath(v) {
+  if (v.editPath) return v.editPath;
+  const base = v.name.replace(/\.[^.]+$/, "");
+  const out = `${CONVERTED_DIR}/${base} (${v.size || 0}).mp4`;
+  if (await exists(out)) {
+    v.editPath = out;
+    return out;
+  }
+  log(`  converting ${v.name} into a Premiere-friendly copy (once per video; a few minutes)...`);
+  const status = document.getElementById("runStatus");
+  await writeTextFile(CONVERT_JOB, `${v.path}\n${out}\n`);
+  await writeTextFile(CONVERT_PROGRESS, "");
+  await startHelper("convert");
+  const t0 = Date.now();
+  let helperLog = "";
+  let lastShown = 0;
+  while (Date.now() - t0 < 3 * 3600 * 1000) {
+    await new Promise((r) => setTimeout(r, 5000));
+    helperLog = (await readTextFile(HELPER_LOG)) || "";
+    if (/RESULT|ERROR/.test(helperLog)) break;
+    if (Date.now() - lastShown > 30000) {
+      lastShown = Date.now();
+      const tail = ((await readTextFile(CONVERT_PROGRESS)) || "").trim().split(/[\r\n]+/).pop() || "";
+      const pct = tail.match(/(\d+(?:\.\d+)?)\s*%/);
+      const shown = pct ? `${Math.round(Number(pct[1]))}%` : tail.slice(-40);
+      log(`  still converting (${Math.round((Date.now() - t0) / 60000)} min)${shown ? ": " + shown : ""}`);
+      if (status) status.textContent = `converting ${v.name}${pct ? " " + shown : ""}... keep hands off the mouse`;
+    }
+  }
+  log("Helper log:\n" + helperLog);
+  if (/RESULT: converted/.test(helperLog) && (await exists(out))) {
+    log(`  converted in ${Math.round((Date.now() - t0) / 1000)}s: ${out}`);
+    v.editPath = out;
+    return out;
+  }
+  log(`  WARNING: couldn't convert ${v.name}; using the original (exports may be slow)`);
+  v.editPath = v.path;
+  return v.path;
+}
+
 // Put the next unused part of the source video on V1: muted, filling the 1080x1920 frame, same length
 // as the voiceover. Returns what was used so the usage record can be updated after export.
 async function addVideo(project, seq, needed, usage) {
@@ -852,7 +898,7 @@ async function addVideo(project, seq, needed, usage) {
   let pick = chooseSource(videos, usage, needed);
   while (pick.needsMeasuring) {
     const v = videos.find((x) => x.name === pick.name);
-    const vclip = await importPath(project, v.path);
+    const vclip = await importPath(project, await editablePath(v));
     if (changed.has(v.name)) {
       // Premiere may still describe the old file that had this name
       try {
@@ -873,7 +919,7 @@ async function addVideo(project, seq, needed, usage) {
   if (pick.error) throw new Error(pick.error);
 
   const v = videos.find((x) => x.name === pick.name);
-  const vclip = await importPath(project, v.path);
+  const vclip = await importPath(project, await editablePath(v));
   const info = usage[v.name];
   log(`  video: ${v.name} from ${formatTime(pick.start)} to ${formatTime(pick.start + needed)}`);
   transaction(project, "VidAuto: video in/out", () => [
