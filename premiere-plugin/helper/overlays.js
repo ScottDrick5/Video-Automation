@@ -35,6 +35,7 @@ const STYLE = {
   arrowShaftHeight: 141,
   arrowHeadHeight: 230,
   arrowTextCenterX: 542,
+  arrowShine: 1,
 };
 
 function readJson(path) {
@@ -171,6 +172,26 @@ function drawArrow(color, st, path) {
   const bottom = hsl(color.hue, Math.min(90, color.saturation + 15), Math.max(18, color.lightness - 6));
   const grad = $.NSGradient.alloc.initWithStartingColorEndingColor(bottom, top);
   grad.drawInBezierPathAngle(p, 90); // light at the top, dark at the bottom
+
+  // Shine: a glossy light band over the top half, a brighter highlight strip along the top of the
+  // shaft, and a thin light rim. arrowShine 0 turns it off, 1 is normal, higher is shinier.
+  const shine = st.arrowShine;
+  if (shine > 0) {
+    const white = (alpha) => $.NSColor.colorWithSRGBRedGreenBlueAlpha(1, 1, 1, Math.min(1, alpha * shine));
+    $.NSGraphicsContext.saveGraphicsState;
+    p.addClip;
+    const band = $.NSGradient.alloc.initWithStartingColorEndingColor(white(0), white(0.35));
+    band.drawInRectAngle({ origin: { x: x0, y: y(cy + 6) }, size: { width: xt - x0, height: cy + 6 - hTop } }, 90);
+    const strip = $.NSBezierPath.bezierPathWithRoundedRectXRadiusYRadius(
+      { origin: { x: x0 + r * 0.45, y: y(sTop + 8 + r * 0.5) }, size: { width: xs - x0 - r * 0.45 - 6, height: r * 0.5 } },
+      r * 0.25, r * 0.25);
+    const gloss = $.NSGradient.alloc.initWithStartingColorEndingColor(white(0.05), white(0.5));
+    gloss.drawInBezierPathAngle(strip, 90);
+    $.NSGraphicsContext.restoreGraphicsState;
+    white(0.3).setStroke;
+    p.setLineWidth(2.5);
+    p.stroke;
+  }
 
   const f = font(st.arrowFont, st.arrowWeight, st.arrowTextSize);
   const pitch = st.arrowTextSize * 1.22;
