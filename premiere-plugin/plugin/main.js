@@ -32,7 +32,7 @@ const ARROW_TRACK = 2; // V3
 const ARROW_SECONDS = 5;
 const CLIP_ARROW_AT = 5; // seconds into each clip
 const TICKS_PER_SECOND = 254016000000;
-const PLUGIN_VERSION = "0.4.1";
+const PLUGIN_VERSION = "0.4.2";
 
 const state = { clip: null, transcript: null, cut: null, sequence: null };
 
@@ -224,7 +224,9 @@ async function importVoiceover() {
   return clip.name;
 }
 
-// Premiere transcribes new clips on import (your setting). Wait for that; if nothing shows up, ask for it.
+// Premiere usually transcribes new clips on import. If it hasn't after a few seconds, put the voiceover on a
+// timeline of its own and open it: Premiere transcribes what's on the open timeline. That timeline is
+// deleted again by dropTranscribeSequence() once the transcript is complete.
 async function getTranscript(clip, maxSeconds = 600) {
   const read = async () => {
     try {
@@ -236,22 +238,36 @@ async function getTranscript(clip, maxSeconds = 600) {
   };
   let json = await read();
   const t0 = Date.now();
-  let asked = false;
+  let onTimeline = false;
+  let told = false;
   while (!json && Date.now() - t0 < maxSeconds * 1000) {
-    if (!asked && Date.now() - t0 > 20000) {
-      asked = true;
-      log("  no transcript yet, asking Premiere to transcribe...");
+    if (!onTimeline && Date.now() - t0 > 8000) {
+      onTimeline = true;
+      log("  no transcript yet: putting the voiceover on a timeline so Premiere transcribes it...");
       try {
-        await ppro.Transcript.transcribeClipProjectItem(clip);
+        const project = await activeProject();
+        const tmp = need(await project.createSequenceFromMedia("VidAuto transcribing", [clip]), "no sequence");
+        state.transcribeSeq = tmp;
+        await project.setActiveSequence(tmp);
+        await project.openSequence(tmp);
       } catch (err) {
-        log(`  transcribe request: ${err.message || err}`);
-        log(`  (this Premiere's transcript commands: ${Object.keys(ppro.Transcript || {}).join(", ") || "none"})`);
-        const msg = "WAITING: Premiere hasn't transcribed the voiceover. In the Text panel's Transcript tab, select the " +
-          "voiceover in the Project panel and click Transcribe; the run continues by itself once it's done.";
-        log(msg);
-        const status = document.getElementById("runStatus");
-        if (status) status.textContent = msg;
+        log(`  making the transcribing timeline: ${err.message || err}`);
       }
+      if (typeof ppro.Transcript.transcribeClipProjectItem === "function") {
+        try {
+          await ppro.Transcript.transcribeClipProjectItem(clip);
+        } catch (err) {
+          log(`  transcribe request: ${err.message || err}`);
+        }
+      }
+    }
+    if (!told && Date.now() - t0 > 90000) {
+      told = true;
+      const msg = "WAITING: Premiere hasn't transcribed the voiceover. In the Text panel's Transcript tab click " +
+        "Transcribe; the run continues by itself once it's done.";
+      log(msg);
+      const status = document.getElementById("runStatus");
+      if (status) status.textContent = msg;
     }
     await new Promise((r) => setTimeout(r, 3000));
     json = await read();
@@ -259,6 +275,17 @@ async function getTranscript(clip, maxSeconds = 600) {
   need(json, "No transcript after waiting");
   log(`  transcript ready after ${Math.round((Date.now() - t0) / 1000)}s`);
   return JSON.parse(json);
+}
+
+async function dropTranscribeSequence(project) {
+  if (!state.transcribeSeq) return;
+  try {
+    await project.deleteSequence(state.transcribeSeq);
+    log("  removed the transcribing timeline");
+  } catch (err) {
+    log(`  removing the transcribing timeline: ${err.message || err}`);
+  }
+  state.transcribeSeq = null;
 }
 
 async function transcribe() {
@@ -888,6 +915,7 @@ async function makeVideo(project, folderPath, voiceoverName, usage) {
     log(`  transcript still growing (${n} words)...`);
     words = n;
   }
+  await dropTranscribeSequence(project);
   state.cut = need(findCutPoint(state.transcript), '"Am I the ahole" (any spelling) not found in the voiceover');
   log(`  cut at ${state.cut.seconds.toFixed(2)}s -> starts "${state.cut.after}..."`);
 
