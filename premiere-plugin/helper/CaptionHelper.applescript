@@ -77,33 +77,42 @@ on createCaptions()
 			delay 2
 		end tell
 
-		-- 3. Confirm the Create captions window
+		-- 3. Confirm the Create captions window. Wait up to 5s for it; if it can't be recognised by name,
+		--    press Return, which triggers its default (blue) Create captions button.
+		set dlg to missing value
+		repeat 10 times
+			tell application "System Events"
+				repeat with w in (windows of p)
+					set wn to name of w
+					if wn is not missing value and wn contains "aption" then set dlg to w
+				end repeat
+			end tell
+			if dlg is not missing value then exit repeat
+			delay 0.5
+		end repeat
 		my logWindows(p)
 		tell application "System Events"
-			set dlg to missing value
-			repeat with w in (windows of p)
-				set wn to name of w
-				if wn is not missing value and wn contains "aption" then set dlg to w
-			end repeat
-			if dlg is missing value then
-				my logLine("RESULT: no Create captions window appeared. Is the shortcut assigned in Keyboard Shortcuts > Text Panel > Create Captions?")
-				return
+			if dlg is not missing value then
+				set bnames to {}
+				try
+					repeat with b in (buttons of dlg)
+						set end of bnames to (name of b as text)
+					end repeat
+				end try
+				set AppleScript's text item delimiters to ", "
+				my logLine("Found captions window '" & (name of dlg) & "', buttons: " & (bnames as text))
+				set AppleScript's text item delimiters to ""
+				try
+					click (first button of dlg whose name contains "Create")
+					my logLine("RESULT: clicked the Create captions button.")
+					return
+				end try
+			else
+				my logLine("Captions window not recognised by name (see windows above); pressing Return.")
 			end if
-			set bnames to {}
-			try
-				repeat with b in (buttons of dlg)
-					set end of bnames to (name of b as text)
-				end repeat
-			end try
-			set AppleScript's text item delimiters to ", "
-			my logLine("Buttons in captions window: " & (bnames as text))
-			set AppleScript's text item delimiters to ""
-			try
-				click (first button of dlg whose name contains "Create")
-				my logLine("RESULT: clicked the Create captions button.")
-				return
-			end try
-			key code 36 -- Return presses the window's default (blue) button
+			set frontmost of p to true
+			delay 0.3
+			key code 36 -- Return
 			my logLine("RESULT: pressed Return to confirm.")
 		end tell
 	on error errMsg number errNum
