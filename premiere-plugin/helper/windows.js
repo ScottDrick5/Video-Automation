@@ -20,6 +20,18 @@ function premiereWindows() {
     .map((w) => ({ x: w.kCGWindowBounds.X, y: w.kCGWindowBounds.Y, w: w.kCGWindowBounds.Width, h: w.kCGWindowBounds.Height }));
 }
 
+// Premiere's main window (the biggest one). A floating panel or dialog is never it, so it is left out
+// when looking for them: otherwise a docked Text panel could be "found" as the whole main window and
+// the helper would type into the timeline.
+function mainWindow(list) {
+  return list.reduce((big, w) => (!big || w.w * w.h > big.w * big.h ? w : big), null);
+}
+
+function notMain(list) {
+  const main = mainWindow(list);
+  return list.length > 1 ? list.filter((w) => w !== main) : [];
+}
+
 function mouse() {
   const p = $.CGEventGetLocation($.CGEventCreate(null));
   return { x: p.x, y: p.y };
@@ -27,17 +39,17 @@ function mouse() {
 
 function record() {
   const m = mouse();
-  const under = premiereWindows()
+  const under = notMain(premiereWindows())
     .filter((w) => m.x >= w.x && m.x <= w.x + w.w && m.y >= w.y && m.y <= w.y + w.h)
     .sort((a, b) => a.w * a.h - b.w * b.h); // smallest window under the pointer = the dialog
-  if (!under.length) return "error: the mouse is not over a Premiere window";
+  if (!under.length) return "error: the mouse is not over a separate Premiere window (dialog or floating panel)";
   const d = under[0];
   return [d.x + d.w - m.x, d.y + d.h - m.y, d.w, d.h].map(Math.round).join(",");
 }
 
 function smallestUnderMouse() {
   const m = mouse();
-  const under = premiereWindows()
+  const under = notMain(premiereWindows())
     .filter((w) => m.x >= w.x && m.x <= w.x + w.w && m.y >= w.y && m.y <= w.y + w.h)
     .sort((a, b) => a.w * a.h - b.w * b.h);
   return under.length ? { m, d: under[0] } : null;
@@ -45,7 +57,7 @@ function smallestUnderMouse() {
 
 function point() {
   const hit = smallestUnderMouse();
-  if (!hit) return "error: the mouse is not over a Premiere window";
+  if (!hit) return "error: the mouse is not over a floating Premiere panel (is the Text panel undocked?)";
   const { m, d } = hit;
   return [m.x - d.x, m.y - d.y, d.x + d.w - m.x, d.w, d.h].map(Math.round).join(",");
 }
@@ -53,7 +65,7 @@ function point() {
 function find(w, h, timeout) {
   const end = Date.now() + timeout * 1000;
   do {
-    const match = premiereWindows().find((win) => Math.abs(win.w - w) <= 12 && Math.abs(win.h - h) <= 12);
+    const match = notMain(premiereWindows()).find((win) => Math.abs(win.w - w) <= 12 && Math.abs(win.h - h) <= 12);
     if (match) return [match.x, match.y, match.w, match.h].map(Math.round).join(",");
     delay(0.25);
   } while (Date.now() < end);
@@ -61,7 +73,7 @@ function find(w, h, timeout) {
 }
 
 function rel(w, h) {
-  const win = premiereWindows().find((x) => Math.abs(x.w - w) <= 12 && Math.abs(x.h - h) <= 12);
+  const win = notMain(premiereWindows()).find((x) => Math.abs(x.w - w) <= 12 && Math.abs(x.h - h) <= 12);
   if (!win) return `error: no Premiere window of about ${w}x${h} is open`;
   const m = mouse();
   return [m.x - win.x, m.y - win.y].map(Math.round).join(",");
