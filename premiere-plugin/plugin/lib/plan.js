@@ -51,14 +51,19 @@ function fillScale(w, h, frameW = 1080, frameH = 1920) {
   return Math.ceil(Math.max(frameW / w, frameH / h) * 100 * 100 + 5) / 100; // tiny overshoot avoids a 1px edge
 }
 
-// Premiere timecode "00;07;45;01" (drop-frame) or "00:07:45:01" -> seconds, at the given frame rate.
+// Timecode -> seconds. Accepts "00;07;45;01" / "00:07:45:01" (h m s frames), "7;45;01" / "7:45:01"
+// (m s frames) and "7:45" (m s). At 29.97/59.94 fps it's read as drop-frame timecode, the way Premiere
+// shows it, whichever separator was typed. Returns null if it can't read it.
 function timecodeToSeconds(tc, fps = 29.97) {
-  const m = String(tc).trim().match(/^(\d+)[:;](\d+)[:;](\d+)([:;])(\d+)$/);
-  if (!m) return null;
-  const [h, mi, s, sep, f] = [Number(m[1]), Number(m[2]), Number(m[3]), m[4], Number(m[5])];
+  const text = String(tc).trim();
+  const parts = text.split(/[:;.]/).map((x) => x.trim());
+  if (parts.length < 2 || parts.length > 4 || parts.some((x) => !/^\d+$/.test(x))) return null;
+  const n = parts.map(Number);
+  if (parts.length === 2) return n[0] * 60 + n[1];
+  const [h, mi, s, f] = parts.length === 4 ? n : [0, ...n];
   const nominal = Math.round(fps);
   let frames = (h * 3600 + mi * 60 + s) * nominal + f;
-  if (sep === ";") {
+  if (nominal !== fps) {
     const drop = nominal === 60 ? 4 : 2;
     const minutes = h * 60 + mi;
     frames -= drop * (minutes - Math.floor(minutes / 10));
@@ -66,9 +71,15 @@ function timecodeToSeconds(tc, fps = 29.97) {
   return frames / fps;
 }
 
+// Size from Premiere's "Video Info" column, e.g. "3840 x 2160 (1.0)".
+function videoSizeFrom(text) {
+  const m = String(text).match(/(\d{3,5})\s*x\s*(\d{3,5})/);
+  return m ? { width: Number(m[1]), height: Number(m[2]) } : null;
+}
+
 function formatTime(seconds) {
   const s = Math.max(0, Math.round(seconds));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
-module.exports = { folderDate, foldersToDo, chooseSource, fillScale, timecodeToSeconds, formatTime };
+module.exports = { folderDate, foldersToDo, chooseSource, fillScale, timecodeToSeconds, videoSizeFrom, formatTime };

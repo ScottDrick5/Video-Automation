@@ -5,7 +5,7 @@ const ppro = require("premierepro");
 const uxp = require("uxp");
 const fs = uxp.storage.localFileSystem;
 const { findCutPoint, flattenWords, aholeTerms } = require("./lib/transcript.js");
-const { foldersToDo, chooseSource, fillScale, timecodeToSeconds, formatTime } = require("./lib/plan.js");
+const { foldersToDo, chooseSource, fillScale, timecodeToSeconds, videoSizeFrom, formatTime } = require("./lib/plan.js");
 
 // Your folders
 const AITA_DIR = "/Users/drick/Documents/AITA";
@@ -19,7 +19,7 @@ const HELPER_APP = HELPER_DIR + "/VidAuto Caption Helper.app";
 const HELPER_LOG = HELPER_DIR + "/helper-log.txt";
 const TERMS_FILE = HELPER_DIR + "/terms.txt"; // words for the helper to replace (links lose "?..." parts)
 const TICKS_PER_SECOND = 254016000000;
-const PLUGIN_VERSION = "0.3.0";
+const PLUGIN_VERSION = "0.3.1";
 
 const state = { clip: null, transcript: null, cut: null, sequence: null };
 
@@ -490,16 +490,48 @@ async function sourceVideos() {
 }
 
 // Your Premiere can't report a clip's length or size directly, so make a throwaway sequence from the
-// whole video, read them off it, and delete it again.
+// whole video and read them off it; if that doesn't work, read Premiere's Project panel columns.
 async function measureVideo(project, vclip) {
-  transaction(project, "VidAuto: clear video in/out", () => [vclip.createClearInOutPointsAction()]);
-  const tmp = need(await project.createSequenceFromMedia("VidAuto measuring", [vclip]), "Could not measure the video");
-  const size = await tmp.getFrameSize();
-  const track = await tmp.getVideoTrack(0);
-  const items = track.getTrackItems(ppro.Constants.TrackItemType.CLIP, false);
-  const duration = items.length ? secondsOf(await items[0].getEndTime()) : null;
-  await project.deleteSequence(tmp);
-  need(duration, "Could not read the video's length");
+  try {
+    transaction(project, "VidAuto: clear video in/out", () => [vclip.createClearInOutPointsAction()]);
+  } catch (err) {
+    log(`  clearing the video's in/out: ${err.message || err}`);
+  }
+  let duration = null;
+  let size = null;
+  try {
+    const tmp = need(await project.createSequenceFromMedia("VidAuto measuring", [vclip]), "no sequence");
+    for (let attempt = 1; attempt <= 5 && !duration; attempt++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      for (const [kind, getTrack] of [["V1", () => tmp.getVideoTrack(0)], ["A1", () => tmp.getAudioTrack(0)]]) {
+        const track = await getTrack();
+        const items = track ? track.getTrackItems(ppro.Constants.TrackItemType.CLIP, false) : [];
+        const end = items.length ? secondsOf(await items[0].getEndTime()) : null;
+        log(`  measuring (try ${attempt}): ${kind} has ${items.length} clip(s), end ${end}`);
+        if (end > 0 && !duration) duration = end;
+      }
+    }
+    const fs_ = await tmp.getFrameSize();
+    if (fs_ && fs_.width > 0) size = { width: fs_.width, height: fs_.height };
+    await project.deleteSequence(tmp);
+  } catch (err) {
+    log(`  measuring with a sequence: ${err.message || err}`);
+  }
+  if (!duration || !size) {
+    try {
+      const cols = await ppro.Metadata.getProjectColumnsMetadata(vclip);
+      log(`  Project panel columns: ${String(cols).slice(0, 600)}`);
+      const text = String(cols);
+      const tc = text.match(/Media Duration[^0-9]*(\d+[:;]\d+[:;]\d+[:;]\d+)/);
+      if (!duration && tc) duration = timecodeToSeconds(tc[1]);
+      const vi = text.match(/Video Info[^0-9]*([0-9][^"]*)/);
+      if (!size && vi) size = videoSizeFrom(vi[1]);
+    } catch (err) {
+      log(`  reading the Project panel columns: ${err.message || err}`);
+    }
+  }
+  need(duration, "Could not read the video's length (see log)");
+  need(size, "Could not read the video's size (see log)");
   log(`  measured ${vclip.name}: ${formatTime(duration)}, ${size.width}x${size.height}`);
   return { duration, width: size.width, height: size.height };
 }
@@ -595,6 +627,17 @@ async function makeVideo(project, folderPath, voiceoverName, usage) {
   state.clip = await importPath(project, vo);
   log(`  voiceover: ${voiceoverName}`);
   state.transcript = await getTranscript(state.clip);
+  // Premiere may still be writing the transcript: wait until it has the phrase and stops growing.
+  let words = flattenWords(state.transcript).length;
+  for (let i = 0; i < 60; i++) {
+    await new Promise((r) => setTimeout(r, 5000));
+    const again = await getTranscript(state.clip, 30);
+    const n = flattenWords(again).length;
+    state.transcript = again;
+    if (n === words && n > 0 && findCutPoint(again)) break;
+    log(`  transcript still growing (${n} words)...`);
+    words = n;
+  }
   state.cut = need(findCutPoint(state.transcript), '"Am I the ahole" (any spelling) not found in the voiceover');
   log(`  cut at ${state.cut.seconds.toFixed(2)}s -> starts "${state.cut.after}..."`);
 
@@ -686,8 +729,12 @@ async function showSourceStatus() {
 async function setUsedUpTo() {
   const tc = document.getElementById("usedUpTo").value;
   const seconds = timecodeToSeconds(tc);
-  if (seconds === null || !state.currentSource) {
-    log(`Couldn't set the start: type a timecode like 00;07;45;01`);
+  if (!state.currentSource) {
+    log(`Couldn't set the start: no source video found in ${SOURCE_DIR}`);
+    return;
+  }
+  if (seconds === null) {
+    log(`Couldn't read "${tc}" as a timecode. Type it like 00;07;45;01 or 7:45:01`);
     return;
   }
   const usage = await loadUsage();

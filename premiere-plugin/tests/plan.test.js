@@ -1,7 +1,7 @@
 // Run with: node --test premiere-plugin/tests/*.test.js
 const test = require("node:test");
 const assert = require("node:assert");
-const { folderDate, foldersToDo, chooseSource, fillScale, timecodeToSeconds, formatTime } = require("../plugin/lib/plan");
+const { folderDate, foldersToDo, chooseSource, fillScale, timecodeToSeconds, videoSizeFrom, formatTime } = require("../plugin/lib/plan");
 
 test("folder names are read as posting dates", () => {
   assert.strictEqual(folderDate("9-25-26"), 20260925);
@@ -56,4 +56,17 @@ test("drop-frame timecode converts to real seconds", () => {
   assert.ok(Math.abs(timecodeToSeconds("00;07;45;01") - 465.03) < 0.05);
   assert.ok(Math.abs(timecodeToSeconds("00;10;00;00") - 600) < 0.01);
   assert.strictEqual(formatTime(467.4), "7:47");
+});
+
+test("timecode can be typed in several ways", () => {
+  for (const tc of ["00;07;45;01", "7;45;01", "00:07:45:01", "7:45:01"]) {
+    assert.ok(Math.abs(timecodeToSeconds(tc) - 465.03) < 0.1, tc);
+  }
+  assert.strictEqual(timecodeToSeconds("7:45"), 465);
+  assert.strictEqual(timecodeToSeconds("seven"), null);
+});
+
+test("video size is read from the Video Info column", () => {
+  assert.deepStrictEqual(videoSizeFrom("3840 x 2160 (1.0)"), { width: 3840, height: 2160 });
+  assert.strictEqual(videoSizeFrom("Stereo"), null);
 });
