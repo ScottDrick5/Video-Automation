@@ -35,7 +35,8 @@ There are two ways. If one gives an error, try the other and send Claude the err
 1. Make sure the **Creative Cloud** app is open and you're signed in. Adobe's installer only works then.
 2. Quit Premiere.
 3. Double-click `premiere-plugin/Install Plugin.command`. If macOS won't open it: right-click → **Open** → **Open**.
-4. It tries two versions of the installer file and saves what happened to `vidauto-install-log.txt` on your Desktop.
+4. It copies the installer files to `/Users/Shared/VidAuto` (macOS blocks Adobe's installer from reading
+   Downloads), tries two versions, and saves what happened to `vidauto-install-log.txt` on your Desktop.
 5. If it says **Installed**, open Premiere and look under **Window → UXP Plugins → VidAuto Test**.
 6. If it fails, send Claude the log text.
 
