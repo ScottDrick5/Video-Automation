@@ -35,7 +35,7 @@ const ARROW_TRACK = 2; // V3
 const ARROW_SECONDS = 5;
 const CLIP_ARROW_AT = 5; // seconds into each clip
 const TICKS_PER_SECOND = 254016000000;
-const PLUGIN_VERSION = "0.5.0";
+const PLUGIN_VERSION = "0.5.1";
 
 const state = { clip: null, transcript: null, cut: null, sequence: null };
 
@@ -158,7 +158,7 @@ async function exists(path) {
 async function clearHelperLog() {
   try {
     const entry = await fs.getEntryWithUrl("file:" + HELPER_LOG);
-    await entry.write("");
+    await entry.write("\n") // UXP refuses to write an empty string;
   } catch (e) {
     // no log yet; the helper creates it
   }
@@ -843,7 +843,7 @@ async function editablePath(v) {
   log(`  converting ${v.name} into a Premiere-friendly copy (once per video; a few minutes)...`);
   const status = document.getElementById("runStatus");
   await writeTextFile(CONVERT_JOB, `${v.path}\n${out}\n`);
-  await writeTextFile(CONVERT_PROGRESS, "");
+  await writeTextFile(CONVERT_PROGRESS, "\n");
   await startHelper("convert");
   const t0 = Date.now();
   let helperLog = "";
