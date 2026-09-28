@@ -32,6 +32,37 @@ on markOf(menuItem)
 	end try
 end markOf
 
+-- Position of the Create captions button saved by "Record Button Position.command", or missing value
+on savedButtonPosition()
+	try
+		set t to do shell script "cat /Users/Shared/VidAuto/create-button.txt"
+		set AppleScript's text item delimiters to ","
+		set parts to text items of t
+		set AppleScript's text item delimiters to ""
+		return {(item 1 of parts) as integer, (item 2 of parts) as integer}
+	on error
+		set AppleScript's text item delimiters to ""
+		return missing value
+	end try
+end savedButtonPosition
+
+-- Click the left mouse button at screen position {x, y}, then put the pointer back where it was.
+-- Event numbers: tap 0 = HID, 5 = mouse moved, 1 = left down, 2 = left up, button 0 = left.
+on clickAt(pos)
+	set js to "ObjC.import('CoreGraphics');" & ¬
+		"var back = $.CGEventGetLocation($.CGEventCreate(null));" & ¬
+		"var pt = $.CGPointMake(" & (item 1 of pos) & "," & (item 2 of pos) & ");" & ¬
+		"function post(type, where) { $.CGEventPost(0, $.CGEventCreateMouseEvent(null, type, where, 0)); }" & ¬
+		"post(5, pt); delay(0.15); post(1, pt); delay(0.08); post(2, pt); delay(0.15); post(5, back); 'mouse events'"
+	try
+		return do shell script "osascript -l JavaScript -e " & quoted form of js
+	on error errMsg
+		my logLine("Mouse events failed (" & errMsg & "); trying System Events click")
+		tell application "System Events" to click at pos
+		return "System Events click"
+	end try
+end clickAt
+
 on logWindows(p)
 	tell application "System Events"
 		repeat with w in (windows of p)
@@ -77,8 +108,8 @@ on createCaptions()
 			delay 2
 		end tell
 
-		-- 3. Confirm the Create captions window. Wait up to 5s for it; if it can't be recognised by name,
-		--    press Return, which triggers its default (blue) Create captions button.
+		-- 3. Confirm the Create captions window. Wait up to 5s in case it can be found by name;
+		--    otherwise click the button at the recorded position.
 		set dlg to missing value
 		repeat 10 times
 			tell application "System Events"
@@ -107,14 +138,19 @@ on createCaptions()
 					my logLine("RESULT: clicked the Create captions button.")
 					return
 				end try
-			else
-				my logLine("Captions window not recognised by name (see windows above); pressing Return.")
 			end if
-			-- Don't bring Premiere to the front here: that makes the main window active instead of the
-			-- Create captions window, and Return then goes to the wrong place.
-			key code 36 -- Return
-			my logLine("RESULT: pressed Return to confirm.")
 		end tell
+
+		-- Premiere doesn't show its windows to helpers and opens this one without making it active,
+		-- so click the button at the position recorded with "Record Button Position.command".
+		set pos to my savedButtonPosition()
+		if pos is missing value then
+			logLine("RESULT: no saved button position. Open the Create captions window and run 'Record Button Position.command', then try again.")
+			return
+		end if
+		logLine("Clicking the Create captions button at " & (item 1 of pos) & "," & (item 2 of pos))
+		set r to my clickAt(pos)
+		logLine("RESULT: clicked (" & r & "). If captions did not appear, record the button position again.")
 	on error errMsg number errNum
 		if errNum is -1719 or errNum is -25211 or errNum is -1743 or errNum is 1002 then
 			logLine("ERROR: Mac permission missing (" & errNum & "). Allow 'VidAuto Caption Helper' in System Settings > Privacy & Security > Accessibility (and Automation), then try again.")
