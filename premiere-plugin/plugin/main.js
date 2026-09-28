@@ -32,7 +32,7 @@ const ARROW_TRACK = 2; // V3
 const ARROW_SECONDS = 5;
 const CLIP_ARROW_AT = 5; // seconds into each clip
 const TICKS_PER_SECOND = 254016000000;
-const PLUGIN_VERSION = "0.4.2";
+const PLUGIN_VERSION = "0.4.3";
 
 const state = { clip: null, transcript: null, cut: null, sequence: null };
 
@@ -706,13 +706,15 @@ async function sourceVideos() {
   for (const e of entries) {
     if (!e.isFile || !/\.(mp4|mov|m4v|mkv|webm)$/i.test(e.name)) continue;
     let created = 0;
+    let size = null;
     try {
       const meta = await e.getMetadata();
       created = new Date(meta.dateCreated || meta.dateModified || 0).getTime();
+      size = meta.size !== undefined ? Number(meta.size) : null;
     } catch (err) {
       // fall back to name order
     }
-    videos.push({ name: e.name, created, path: e.nativePath });
+    videos.push({ name: e.name, created, size, path: e.nativePath });
   }
   return videos;
 }
@@ -829,19 +831,37 @@ async function setScale(project, item, percent) {
 async function addVideo(project, seq, needed, usage) {
   const videos = await sourceVideos();
   if (!videos.length) throw new Error(`No videos in ${SOURCE_DIR}`);
-  // measurements from before 0.3.3 could be wrong (sound-only, or 60x too short), so measure again
+  // measurements from before 0.3.3 could be wrong (sound-only, or 60x too short), so measure again.
+  // A file replaced by a different video under the same name (its size changed) is a new video:
+  // measure it again and start from 0:00. Videos measured before sizes were kept are measured once more.
+  const changed = new Set();
   for (const v of videos) {
     const u = usage[v.name];
-    if (u && u.duration !== undefined && u.measured !== 3) {
+    if (!u) continue;
+    const replaced = u.fileSize !== undefined && v.size !== null && u.fileSize !== v.size;
+    if (replaced) {
+      log(`  ${v.name} is a different file than before (size changed): measuring it again, starting at 0:00`);
+      u.usedUpTo = 0;
+    }
+    if (u.duration !== undefined && (u.measured !== 3 || replaced || (u.fileSize === undefined && v.size !== null))) {
       delete u.duration;
       delete u.exhausted;
+      changed.add(v.name);
     }
   }
   let pick = chooseSource(videos, usage, needed);
   while (pick.needsMeasuring) {
     const v = videos.find((x) => x.name === pick.name);
     const vclip = await importPath(project, v.path);
-    usage[v.name] = { ...(usage[v.name] || {}), ...(await measureVideo(project, vclip)) };
+    if (changed.has(v.name)) {
+      // Premiere may still describe the old file that had this name
+      try {
+        await vclip.refreshMedia();
+      } catch (err) {
+        log(`  refreshing ${v.name} in Premiere: ${err.message || err}`);
+      }
+    }
+    usage[v.name] = { ...(usage[v.name] || {}), ...(await measureVideo(project, vclip)), fileSize: v.size === null ? undefined : v.size };
     await saveUsage(usage);
     pick = chooseSource(videos, usage, needed);
   }
