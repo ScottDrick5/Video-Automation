@@ -34,6 +34,7 @@ end markOf
 
 property winTool : "/Users/Shared/VidAuto/windows.js"
 property buttonFile : "/Users/Shared/VidAuto/create-button.txt"
+property panelFile : "/Users/Shared/VidAuto/text-panel.txt"
 
 -- Run a command of windows.js (finds Premiere windows by size, clicks the mouse)
 on winCmd(args)
@@ -129,10 +130,105 @@ on createCaptions()
 	end try
 end createCaptions
 
+-- Click a spot recorded by "Record Text Panel Positions.command" ("left,top,right,w,h") in the
+-- floating Text panel window at {wx, wy} with width fw. Spots on the right side (Replace all) are
+-- measured from the right edge so they still line up if the panel is a little wider.
+on clickPanel(pt, wx, wy, fw, fromRight)
+	if fromRight then
+		set x to wx + fw - (item 3 of pt)
+	else
+		set x to wx + (item 1 of pt)
+	end if
+	set y to wy + (item 2 of pt)
+	return my winCmd("click " & x & " " & y)
+end clickPanel
+
+-- Replace ahole / a-hole / asshole with A-Hole using Find and Replace in the Captions tab of the
+-- floating Text panel. Expects the "Replace with" row to be closed when it starts, and closes it again.
+on fixAHole()
+	do shell script "mkdir -p /Users/Shared/VidAuto && : > " & quoted form of logPath
+	logLine("A-Hole fix started")
+	try
+		try
+			set lns to paragraphs of (do shell script "cat " & quoted form of panelFile)
+		on error
+			logLine("RESULT: Text panel positions not recorded yet. Run 'Record Text Panel Positions.command'.")
+			return
+		end try
+		set searchPt to my numbersIn(item 1 of lns)
+		set togglePt to my numbersIn(item 2 of lns)
+		set fieldPt to my numbersIn(item 3 of lns)
+		set allPt to my numbersIn(item 4 of lns)
+		set pw to item 4 of searchPt
+		set ph to item 5 of searchPt
+
+		set p to premiereProcess()
+		tell application "System Events" to set frontmost of p to true
+		delay 0.5
+		set found to my winCmd("find " & pw & " " & ph & " 3")
+		if found is "none" then
+			logLine("RESULT: the floating Text panel (" & pw & "x" & ph & ") was not found. Is it undocked and the same size as when recorded?")
+			return
+		end if
+		set {wx, wy, fw, fh} to my numbersIn(found)
+		logLine("Text panel found at " & found)
+
+		set isFirst to true
+		repeat with t in {"ahole", "a-hole", "asshole"}
+			my clickPanel(searchPt, wx, wy, fw, false)
+			delay 0.3
+			tell application "System Events"
+				keystroke "a" using command down
+				keystroke (t as text)
+			end tell
+			delay 1
+			if isFirst then
+				-- open the Replace row and type the replacement once; it stays for the other words
+				my clickPanel(togglePt, wx, wy, fw, false)
+				delay 0.7
+				my clickPanel(fieldPt, wx, wy, fw, false)
+				delay 0.3
+				tell application "System Events"
+					keystroke "a" using command down
+					keystroke "A-Hole"
+				end tell
+				delay 0.4
+				set isFirst to false
+			end if
+			my clickPanel(allPt, wx, wy, fw, true)
+			logLine("Searched '" & t & "' and clicked Replace all")
+			delay 1
+		end repeat
+
+		-- Tidy up: close the Replace row while the search still has text (the button hides when it's empty),
+		-- then clear the search.
+		my clickPanel(togglePt, wx, wy, fw, false)
+		delay 0.5
+		my clickPanel(searchPt, wx, wy, fw, false)
+		delay 0.3
+		tell application "System Events"
+			keystroke "a" using command down
+			key code 51 -- delete
+		end tell
+		logLine("RESULT: replaced ahole, a-hole and asshole with A-Hole")
+	on error errMsg number errNum
+		if errNum is -1719 or errNum is -25211 or errNum is -1743 or errNum is 1002 then
+			logLine("ERROR: Mac permission missing (" & errNum & "). Allow 'VidAuto Caption Helper' in System Settings > Privacy & Security > Accessibility, then try again.")
+		else
+			logLine("ERROR " & errNum & ": " & errMsg)
+		end if
+	end try
+end fixAHole
+
 on run
 	createCaptions()
 end run
 
+-- vidauto-helper://captions creates captions; vidauto-helper://ahole fixes A-Hole in them
 on open location theURL
-	createCaptions()
+	if theURL contains "ahole" then
+		fixAHole()
+	else
+		createCaptions()
+	end if
 end open location

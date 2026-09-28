@@ -3,13 +3,13 @@
 const ppro = require("premierepro");
 const uxp = require("uxp");
 const fs = uxp.storage.localFileSystem;
-const { findCutPoint, fixAHole, flattenWords } = require("./lib/transcript.js");
+const { findCutPoint, flattenWords } = require("./lib/transcript.js");
 
 const HELPER_DIR = "/Users/Shared/VidAuto";
 const HELPER_APP = HELPER_DIR + "/VidAuto Caption Helper.app";
 const HELPER_LOG = HELPER_DIR + "/helper-log.txt";
 const TICKS_PER_SECOND = 254016000000;
-const PLUGIN_VERSION = "0.1.6";
+const PLUGIN_VERSION = "0.2.0";
 
 const state = { clip: null, transcript: null, cut: null, sequence: null };
 
@@ -83,6 +83,15 @@ async function readTextFile(path) {
     return await entry.read();
   } catch (e) {
     return null;
+  }
+}
+
+async function clearHelperLog() {
+  try {
+    const entry = await fs.getEntryWithUrl("file:" + HELPER_LOG);
+    await entry.write("");
+  } catch (e) {
+    // no log yet; the helper creates it
   }
 }
 
@@ -184,100 +193,6 @@ async function findCut() {
   log(`  deleted part ends with: ...${cut.before}`);
   log(`  video will start with:  ${cut.after}...`);
   return `cut at ${cut.seconds.toFixed(2)}s`;
-}
-
-function describe(value) {
-  if (value === null || value === undefined) return String(value);
-  const name = value.constructor && value.constructor.name;
-  return `${typeof value}${name ? " " + name : ""}`;
-}
-
-// Premiere versions differ in how a transcript is turned back into TextSegments, so try each known way
-// and log exactly which part fails.
-async function importTranscript(project, clip, json) {
-  log(`clip is ${describe(clip)}; Transcript.importFromJSON: ${typeof ppro.Transcript.importFromJSON}; ` +
-      `TextSegments.importFromJSON: ${typeof (ppro.TextSegments && ppro.TextSegments.importFromJSON)}`);
-  const attempts = [
-    ["Transcript.importFromJSON", async () => ppro.Transcript.importFromJSON(json)],
-    ["TextSegments.importFromJSON (callback)", () => new Promise((resolve, reject) => {
-      let settled = false;
-      const ok = ppro.TextSegments.importFromJSON(json, (segments) => { settled = true; resolve(segments); });
-      log(`  TextSegments.importFromJSON returned ${ok}`);
-      setTimeout(() => settled || reject(new Error("callback never called")), 5000);
-    })],
-  ];
-  // The clip object from step 1 may be stale, so also try one looked up again by its file path.
-  const freshClip = await findClipByPath(project, await clip.getMediaFilePath());
-  const clips = [["clip from step 1", clip], ["clip looked up again", freshClip]].filter(([, c]) => c);
-  const errors = [];
-  for (const [name, make] of attempts) {
-    let segments;
-    try {
-      segments = await make();
-      log(`  ${name} gave ${describe(segments)}`);
-      if (!segments || typeof segments !== "object") throw new Error(`got ${describe(segments)}`);
-    } catch (err) {
-      log(`  ${name}: failed while making TextSegments: ${err.message || err}`);
-      errors.push(`${name} (making TextSegments)`);
-      continue;
-    }
-    for (const [clipName, target] of clips) {
-      try {
-        // Like Adobe's sample, create the action inside the locked transaction.
-        transaction(project, "VidAuto: fix A-Hole", () => [ppro.Transcript.createImportTextSegmentsAction(segments, target)]);
-        log(`  ${name} + ${clipName}: worked`);
-        return;
-      } catch (err) {
-        log(`  ${name} + ${clipName}: failed: ${err.message || err}`);
-        errors.push(`${name} + ${clipName}`);
-      }
-    }
-  }
-  throw new Error("Could not put the fixed transcript back: " + errors.join("; "));
-}
-
-async function readTranscriptBack(project, clip) {
-  const path = await clip.getMediaFilePath();
-  for (let i = 1; i <= 10; i++) {
-    await new Promise((r) => setTimeout(r, 1000));
-    for (const [name, target] of [["clip from step 1", clip], ["clip looked up again", await findClipByPath(project, path)]]) {
-      if (!target) continue;
-      try {
-        const json = await ppro.Transcript.exportToJSON(target);
-        if (json && json.includes("segments")) {
-          log(`  read back after ${i}s using ${name}`);
-          return JSON.parse(json);
-        }
-        log(`  read-back ${i}s (${name}): got ${describe(json)}`);
-      } catch (err) {
-        log(`  read-back ${i}s (${name}): ${err.message || err}`);
-      }
-    }
-  }
-  log("  Could not read the transcript back after 10s.");
-  return null;
-}
-
-async function fixTranscript() {
-  const project = await activeProject();
-  const clip = need(state.clip, "Run step 1 first");
-  const { transcript, changes } = fixAHole(need(state.transcript, "Run step 2 first"));
-  changes.forEach((c) => log(`  ${c.seconds}s: "${c.from}" -> "${c.to}"`));
-  if (!changes.length) return "nothing to change";
-  const json = JSON.stringify(transcript);
-  await saveToDataFolder("transcript-fixed.json", json);
-  await importTranscript(project, clip, json);
-  // Read it back to prove Premiere kept the change. Premiere may still be applying the import, so retry.
-  const back = await readTranscriptBack(project, clip);
-  if (!back) {
-    state.transcript = transcript;
-    return `${changes.length} fixed (Premiere accepted it; check the Transcript panel to confirm)`;
-  }
-  const count = flattenWords(back).filter((w) => w.text.includes("A-Hole")).length;
-  log(`Transcript in Premiere now contains "A-Hole" ${count} time(s)`);
-  state.transcript = back;
-  if (!count) throw new Error("Premiere accepted the change but the transcript still has no A-Hole");
-  return `${changes.length} fixed`;
 }
 
 async function audioItemInfo(seq) {
@@ -410,42 +325,64 @@ async function buildSequence() {
   return `${size.width}x${size.height} @ ${fps} fps`;
 }
 
-async function createCaptions() {
-  const project = await activeProject();
-  const seq = need((await project.getActiveSequence()) || state.sequence, "Open the test sequence first");
-  const before = await seq.getCaptionTrackCount();
-  log(`Caption tracks before: ${before}`);
-  // Start the helper through its link first; opening the .app file directly failed on Premiere 26.0.2.
-  let started = false;
-  const ways = [
-    ["link vidauto-helper://captions", () => uxp.shell.openExternal("vidauto-helper://captions", "Start the VidAuto helper so it can press Create captions for you")],
-    ["opening the app", () => uxp.shell.openPath(HELPER_APP, "Open the VidAuto helper so it can press Create captions for you")],
-  ];
+// Start the helper through its link (vidauto-helper://<task>). For captions, opening the app also works.
+async function startHelper(task) {
+  const ways = [[`link vidauto-helper://${task}`, () => uxp.shell.openExternal(`vidauto-helper://${task}`, "Start the VidAuto helper")]];
+  if (task === "captions") {
+    ways.push(["opening the app", () => uxp.shell.openPath(HELPER_APP, "Open the VidAuto helper so it can press Create captions for you")]);
+  }
+  await clearHelperLog(); // so an old RESULT line isn't mistaken for this run's
   for (const [wayName, start] of ways) {
     try {
       const result = await start();
       if (result === "") {
         log(`  started helper with ${wayName}`);
-        started = true;
-        break;
+        return;
       }
       log(`  ${wayName}: ${result}`);
     } catch (err) {
       log(`  ${wayName}: ${err.message || err}`);
     }
   }
-  if (!started) throw new Error("Could not start the helper (see log)");
-  log("Helper opened, waiting up to 90s for captions...");
+  throw new Error("Could not start the helper (see log)");
+}
+
+// Wait until the helper writes a RESULT or ERROR line, then return its whole log.
+async function waitForHelper(seconds) {
+  for (let i = 0; i < seconds; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+    const text = (await readTextFile(HELPER_LOG)) || "";
+    if (/RESULT|ERROR/.test(text)) return text;
+  }
+  return (await readTextFile(HELPER_LOG)) || "(no helper log found)";
+}
+
+async function createCaptions() {
+  const project = await activeProject();
+  const seq = need((await project.getActiveSequence()) || state.sequence, "Open the test sequence first");
+  const before = await seq.getCaptionTrackCount();
+  log(`Caption tracks before: ${before}`);
+  await startHelper("captions");
+  log("Helper started, waiting up to 90s for captions...");
   let after = before;
   for (let i = 0; i < 90 && after <= before; i++) {
     await new Promise((r) => setTimeout(r, 1000));
     after = await seq.getCaptionTrackCount();
   }
-  const helperLog = await readTextFile(HELPER_LOG);
-  log("Helper log:\n" + (helperLog || "(no helper log found)"));
+  log("Helper log:\n" + ((await readTextFile(HELPER_LOG)) || "(no helper log found)"));
   log(`Caption tracks after: ${after}`);
   if (after <= before) throw new Error("No caption track appeared");
   return "caption track created";
+}
+
+async function fixCaptionWords() {
+  await activeProject();
+  log("Asking the helper to replace ahole / a-hole / asshole with A-Hole in the Captions tab...");
+  await startHelper("ahole");
+  const helperLog = await waitForHelper(90);
+  log("Helper log:\n" + helperLog);
+  if (/ERROR/.test(helperLog) || !/RESULT: replaced/.test(helperLog)) throw new Error("The helper did not finish the replacements (see log)");
+  return "done - check the captions";
 }
 
 async function testExport() {
@@ -473,9 +410,9 @@ const STEPS = [
   ["Import voiceover", importVoiceover],
   ["Transcribe", transcribe],
   ["Find cut point", findCut],
-  ["Fix A-Hole", fixTranscript],
   ["Build sequence", buildSequence],
   ["Create captions", createCaptions],
+  ["Fix A-Hole in captions", fixCaptionWords],
   ["Test export", testExport],
 ];
 

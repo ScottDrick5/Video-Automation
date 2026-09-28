@@ -8,11 +8,11 @@ and never deletes anything.
 |---|---|
 | 0. Check setup | Premiere version, open project, and that the plugin can reach everything it needs |
 | 1. Import voiceover | Brings a voiceover file into the open project |
-| 2. Transcribe | Runs Premiere's own transcription and reads every word with its time |
-| 3. Find cut point | Finds the first "Am I the ahole" (any spelling) and shows the time. Nothing is cut yet. |
-| 4. Fix A-Hole | Changes ahole / a-hole / asshole / a hole to **A-Hole** in Premiere's transcript |
-| 5. Build sequence | Starts the voiceover at "Am I the ahole" and makes a new 1080×1920 sequence from it |
-| 6. Create captions | Opens the small Mac helper, which presses Create captions for you |
+| 2. Transcribe | Uses Premiere's own transcript (Premiere makes it automatically on import) |
+| 3. Find cut point | Finds the first "Am I the ahole" (any spelling) and shows the time |
+| 4. Build sequence | Starts the voiceover at "Am I the ahole" at 0:00 in a new 1080×1920, 29.97 fps sequence |
+| 5. Create captions | The Mac helper presses Create Captions (keyboard shortcut) and clicks its Create button |
+| 6. Fix A-Hole | The helper uses Find and Replace in the floating Text panel: ahole / a-hole / asshole → **A-Hole** |
 | 7. Test export | Exports the test sequence with your export preset as `AITA-test.mp4` |
 
 ## One-time setup (about 10 minutes)
@@ -78,6 +78,18 @@ so it works on any screen, with one monitor or three.
 5. When it says *Saved*, press **Cancel** in Premiere.
 
 Record again only if Premiere changes the size of that window (for example after an update).
+
+### 5d. Float the Text panel and record its Find and Replace spots (once)
+The helper fixes ahole / a-hole / asshole → A-Hole with Find and Replace in the Captions tab. It needs the
+Text panel as its own window so it can find it on any screen.
+1. Click the **☰** next to *Text* → **Undock Panel**. Size and place it how you like.
+2. Open its **Captions** tab (a caption track must exist), type anything in the search box, and click
+   **Replace** so the *Replace with* row shows.
+3. Double-click `premiere-plugin/helper/Record Text Panel Positions.command` and point at each item when asked:
+   the search box, the Replace button, the Replace with box, and Replace all.
+4. When it says *Saved*, click **Replace** again to close that row and clear the search box.
+
+Run it again if you resize the floating Text panel.
 
 ### 6. Save your export preset as a file
 In Premiere's **Export** page, click **•••** next to *Preset* → **Save preset**, and name it `AITA`.

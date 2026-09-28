@@ -4,6 +4,8 @@
 //   record                      -> find the Premiere window under the mouse, print "dx,dy,w,h"
 //                                  (button position measured from the window's right and bottom edges)
 //   find <w> <h> <timeoutSec>   -> wait for a Premiere window of about that size, print "x,y,w,h" or "none"
+//   point                       -> for the Premiere window under the mouse, print "left,top,right,w,h"
+//                                  (pointer distance from the window's left, top and right edges, and its size)
 //   click <x> <y>               -> click the left mouse button there and put the pointer back
 
 ObjC.import("CoreGraphics");
@@ -29,6 +31,21 @@ function record() {
   if (!under.length) return "error: the mouse is not over a Premiere window";
   const d = under[0];
   return [d.x + d.w - m.x, d.y + d.h - m.y, d.w, d.h].map(Math.round).join(",");
+}
+
+function smallestUnderMouse() {
+  const m = mouse();
+  const under = premiereWindows()
+    .filter((w) => m.x >= w.x && m.x <= w.x + w.w && m.y >= w.y && m.y <= w.y + w.h)
+    .sort((a, b) => a.w * a.h - b.w * b.h);
+  return under.length ? { m, d: under[0] } : null;
+}
+
+function point() {
+  const hit = smallestUnderMouse();
+  if (!hit) return "error: the mouse is not over a Premiere window";
+  const { m, d } = hit;
+  return [m.x - d.x, m.y - d.y, d.x + d.w - m.x, d.w, d.h].map(Math.round).join(",");
 }
 
 function find(w, h, timeout) {
@@ -59,7 +76,8 @@ function click(x, y) {
 function run(argv) {
   const [cmd, a, b, c] = argv;
   if (cmd === "record") return record();
+  if (cmd === "point") return point();
   if (cmd === "find") return find(Number(a), Number(b), Number(c || 8));
   if (cmd === "click") return click(Number(a), Number(b));
-  return "usage: record | find <w> <h> <timeout> | click <x> <y>";
+  return "usage: record | point | find <w> <h> <timeout> | click <x> <y>";
 }
