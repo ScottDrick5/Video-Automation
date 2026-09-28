@@ -9,15 +9,17 @@ test("folder names are read as posting dates", () => {
   assert.strictEqual(folderDate("Source Video"), null);
 });
 
-test("only date folders with a voiceover and no AITA.mp4, oldest first", () => {
+test("only date folders with a voiceover and no finished video, oldest first", () => {
   const todo = foldersToDo([
     { name: "10-1-26", files: ["chatgpt-juniper.aac"] },
     { name: "9-25-26", files: ["vo.mp3", "AITA.mp4"] }, // done
     { name: "9-27-26", files: ["b.aac", "a.aac"] },
     { name: "9-28-26", files: ["notes.txt"] }, // no voiceover yet
+    { name: "9-29-26", files: ["vo.aac", "title.txt", "AITA - My Story (Full Video).mp4"] }, // done
+    { name: "9-30-26", files: ["vo.aac", "AITA - My Story (Part 1).mp4"] }, // clips only: full video missing
     { name: "misc", files: ["x.aac"] }, // not a date
   ]);
-  assert.deepStrictEqual(todo.map((f) => [f.name, f.voiceover]), [["9-27-26", "b.aac"], ["10-1-26", "chatgpt-juniper.aac"]]);
+  assert.deepStrictEqual(todo.map((f) => [f.name, f.voiceover]), [["9-27-26", "b.aac"], ["9-30-26", "vo.aac"], ["10-1-26", "chatgpt-juniper.aac"]]);
 });
 
 test("continues the oldest video where the last one stopped", () => {

@@ -8,13 +8,15 @@ function folderDate(name) {
   return year * 10000 + Number(m[1]) * 100 + Number(m[2]);
 }
 
-// Date folders that still need a video, oldest posting date first.
+// Date folders that still need a video, oldest posting date first. A folder is done once it has
+// "AITA - <title> (Full Video).mp4" (or AITA.mp4 from before the clips were automated).
 // folders: [{ name, files: [fileName, ...] }]
 const AUDIO = /\.(aac|mp3|wav|m4a)$/i;
+const DONE = /^aita\.mp4$|\(full video\)\.mp4$/i;
 function foldersToDo(folders) {
   return folders
     .filter((f) => folderDate(f.name) !== null)
-    .filter((f) => !f.files.some((n) => n.toLowerCase() === "aita.mp4"))
+    .filter((f) => !f.files.some((n) => DONE.test(n)))
     .map((f) => ({ ...f, voiceover: f.files.filter((n) => AUDIO.test(n)).sort().pop() || null }))
     .filter((f) => f.voiceover)
     .sort((a, b) => folderDate(a.name) - folderDate(b.name));

@@ -27,6 +27,8 @@ codesign --force --deep --sign - "$APP"
 
 # Window finder / mouse clicker used by the helper and by Record Button Position.command
 cp windows.js /Users/Shared/VidAuto/windows.js
+# Draws the title and arrow pictures
+cp overlays.js /Users/Shared/VidAuto/overlays.js
 
 echo "Built: $APP"
 echo

@@ -6,17 +6,24 @@ and never deletes anything.
 
 ## Daily use
 
-1. Put each voiceover in its posting-date folder: `/Users/drick/Documents/AITA/New Video Clips/<M-D-YY>/`.
+1. Put each voiceover in its posting-date folder: `/Users/drick/Documents/AITA/New Video Clips/<M-D-YY>/`,
+   together with a `title.txt` holding the story title on one line (e.g. `I Ruined Her Graduation`).
 2. Keep downloaded videos in `/Users/drick/Documents/AITA/Source Video/` (used oldest first).
 3. Open **AITA Template.prproj** in Premiere, with the Text panel floating.
 4. In the **VidAuto** panel click **Run** and keep your hands off the mouse. For every date folder that has a
-   voiceover but no `AITA.mp4`, oldest date first, it:
+   voiceover but no full video yet, oldest date first, it:
    - imports the voiceover and waits for Premiere's transcript,
    - cuts everything before "Am I the ahole" and makes a 1080×1920, 29.97 fps sequence named after the folder,
    - puts the next unused part of the source video on V1 (starting where the last video stopped), filling the
      frame, same length as the voiceover, with the video's own sound removed,
    - creates captions with your AITA preset and fixes ahole / a-hole / asshole → A-Hole,
-   - exports `AITA.mp4` into the same date folder with `/Users/drick/Documents/AITA/AITA.epr`.
+   - puts the title (AITA / title / (Full Video)) on V2 for the whole video and the arrow on V3 for 5 seconds at
+     1/5, 2/5, 3/5 and 4/5 of the way through; the arrow gets a random colour for each date,
+   - exports `AITA - <title> (Full Video).mp4` into the date folder with `/Users/drick/Documents/AITA/AITA.epr`,
+   - cuts the clips (at most 1:58, at a pause or a dip in the voice; if the last clip would be under a minute
+     the last two share the time evenly, and if that is still too short every clip gets the same length),
+     swaps the title to (Part 1), (Part 2)..., puts the arrow 5 seconds into each clip, and exports
+     `AITA - <title> (Part 1).mp4` and so on into the date folder.
 5. If there isn't enough video left for a voiceover, it moves to the next source video; if there is none, it
    stops and tells you before building anything.
 
@@ -36,6 +43,7 @@ The panel shows the current source video and how much is left. To start the next
 | 5. Create captions | The Mac helper presses Create Captions (keyboard shortcut) and clicks its Create button |
 | 6. Fix A-Hole | The helper uses Find and Replace in the floating Text panel: ahole / a-hole / asshole → **A-Hole** |
 | 7. Test export | Exports the test sequence with your export preset as `AITA-test.mp4` |
+| 8. Title, arrow & clips | Adds the title and arrow to the test sequence and exports the full video and clips into a folder you pick (it needs a `title.txt`) |
 
 ## One-time setup (about 10 minutes)
 
@@ -122,6 +130,13 @@ Premiere doesn't keep the AITA preset selected, so the helper picks it in the Cr
 4. Press Escape and click Cancel.
 
 Run it again if you add or remove caption presets.
+
+### 5f. Check the title and arrow (once)
+The title (Zilla Slab) and arrow (Montserrat) are drawn by your Mac, so both fonts must be installed (they are
+if Camtasia could use them). Double-click `premiere-plugin/helper/Preview Title and Arrow.command`: it opens a
+picture of the title and arrow on a plain background. Run it again for another random arrow colour.
+If something should be bigger, smaller or moved, tell Claude; the numbers can be changed in
+`/Users/Shared/VidAuto/overlay-style.json` without rebuilding anything.
 
 ### 6. Save your export preset as a file
 In Premiere's **Export** page, click **•••** next to *Preset* → **Save preset**, and name it `AITA`.

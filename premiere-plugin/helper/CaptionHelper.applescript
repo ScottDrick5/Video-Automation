@@ -260,14 +260,43 @@ on wantedTerms()
 	return {"ahole", "a-hole", "asshole"}
 end wantedTerms
 
+-- Stage 2 preparation (no clicking): draw the title and arrow pictures described in
+-- /Users/Shared/VidAuto/overlay-job.json, and make a small copy of the voiceover
+-- (/Users/Shared/VidAuto/voiceover.wav) that the plugin reads to find quiet spots for the clip cuts.
+on makeOverlays()
+	do shell script "mkdir -p /Users/Shared/VidAuto && : > " & quoted form of logPath
+	logLine("Stage 2 preparation started")
+	set jobFile to "/Users/Shared/VidAuto/overlay-job.json"
+	try
+		set voPath to do shell script "cat /Users/Shared/VidAuto/voiceover-path.txt"
+		do shell script "rm -f /Users/Shared/VidAuto/voiceover.wav; afconvert -f WAVE -d LEI16@8000 -c 1 " & quoted form of voPath & " /Users/Shared/VidAuto/voiceover.wav"
+		logLine("Voiceover copied for loudness")
+	on error errMsg
+		logLine("Couldn't copy the voiceover for loudness (" & errMsg & "); cuts will use the transcript's pauses only")
+	end try
+	try
+		set r to do shell script "osascript -l JavaScript /Users/Shared/VidAuto/overlays.js " & quoted form of jobFile
+		if r starts with "ok" then
+			logLine("RESULT: " & r)
+		else
+			logLine("ERROR drawing the pictures: " & r)
+		end if
+	on error errMsg number errNum
+		logLine("ERROR " & errNum & " drawing the pictures: " & errMsg)
+	end try
+end makeOverlays
+
 on run
 	createCaptions()
 end run
 
--- vidauto-helper://captions creates captions; vidauto-helper://ahole fixes A-Hole in them
+-- vidauto-helper://captions creates captions; vidauto-helper://ahole fixes A-Hole in them;
+-- vidauto-helper://overlays draws the title and arrow
 on open location theURL
 	if theURL starts with "vidauto-helper://ahole" then
 		my fixAHole(my wantedTerms())
+	else if theURL starts with "vidauto-helper://overlays" then
+		my makeOverlays()
 	else
 		createCaptions()
 	end if

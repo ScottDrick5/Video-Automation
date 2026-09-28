@@ -1,4 +1,5 @@
-// VidAuto panel. "Run" makes an AITA.mp4 for every date folder that has a voiceover but no video yet.
+// VidAuto panel. "Run" makes the full video and the Facebook clips for every date folder that has a
+// voiceover but no finished video yet.
 // The numbered test buttons below it run single steps, for troubleshooting.
 
 const ppro = require("premierepro");
@@ -6,6 +7,9 @@ const uxp = require("uxp");
 const fs = uxp.storage.localFileSystem;
 const { findCutPoint, flattenWords, aholeTerms } = require("./lib/transcript.js");
 const { foldersToDo, chooseSource, fillScale, timecodeToSeconds, videoSizeFrom, formatTime } = require("./lib/plan.js");
+const {
+  MIN_CLIP, sequenceWords, loudnessFromWav, cutCandidates, planClips, fullArrowTimes, outputName, arrowColor,
+} = require("./lib/clips.js");
 
 // Your folders
 const AITA_DIR = "/Users/drick/Documents/AITA";
@@ -18,8 +22,17 @@ const HELPER_DIR = "/Users/Shared/VidAuto";
 const HELPER_APP = HELPER_DIR + "/VidAuto Caption Helper.app";
 const HELPER_LOG = HELPER_DIR + "/helper-log.txt";
 const TERMS_FILE = HELPER_DIR + "/terms.txt"; // words for the helper to replace (links lose "?..." parts)
+const OVERLAY_JOB = HELPER_DIR + "/overlay-job.json"; // what the helper should draw
+const OVERLAY_DIR = HELPER_DIR + "/overlays"; // title and arrow pictures, one folder per date
+const VO_PATH_FILE = HELPER_DIR + "/voiceover-path.txt"; // voiceover the helper copies for loudness
+const VO_WAV = HELPER_DIR + "/voiceover.wav";
+const TITLE_FILE = "title.txt"; // story title, in each date folder (until Stage 0 writes it)
+const TITLE_TRACK = 1; // V2
+const ARROW_TRACK = 2; // V3
+const ARROW_SECONDS = 5;
+const CLIP_ARROW_AT = 5; // seconds into each clip
 const TICKS_PER_SECOND = 254016000000;
-const PLUGIN_VERSION = "0.3.4";
+const PLUGIN_VERSION = "0.4.0";
 
 const state = { clip: null, transcript: null, cut: null, sequence: null };
 
@@ -471,12 +484,172 @@ async function testExport() {
   return "exported AITA-test.mp4";
 }
 
-async function exportTo(seq, out, presetPath) {
+// Export the whole sequence, or (whole = false) only between its in and out points.
+async function exportTo(seq, out, presetPath, whole = true) {
   log(`Exporting "${seq.name}" to ${out}`);
   const t0 = Date.now();
-  const ok = await ppro.EncoderManager.getManager().exportSequence(seq, ppro.Constants.ExportType.IMMEDIATELY, out, presetPath);
+  const ok = await ppro.EncoderManager.getManager().exportSequence(seq, ppro.Constants.ExportType.IMMEDIATELY, out, presetPath, whole);
   log(`  export finished (${ok}) after ${Math.round((Date.now() - t0) / 1000)}s`);
   if (!ok) throw new Error("Premiere reported the export failed");
+}
+
+
+// ------------------------------------------------------------------ Stage 2: title, arrow, clips
+
+// The story title from title.txt in the date folder (first line that isn't empty).
+async function readTitle(folderPath) {
+  const text = await readTextFile(folderPath + "/" + TITLE_FILE);
+  const title = (text || "").split(/\r?\n/).map((l) => l.trim()).find((l) => l);
+  if (!title) throw new Error(`No story title: put a ${TITLE_FILE} with the title in ${folderPath}`);
+  return title;
+}
+
+// The helper draws the title pictures (one per label) and the arrow, and copies the voiceover for loudness.
+async function makeOverlays(folderName, title, labels, voPath) {
+  const outDir = OVERLAY_DIR + "/" + folderName;
+  const color = arrowColor(folderName);
+  await writeTextFile(OVERLAY_JOB, JSON.stringify({ outDir, title, labels, color }));
+  await writeTextFile(VO_PATH_FILE, voPath);
+  log(`  drawing the title and arrow (arrow colour: hue ${color.hue})...`);
+  await startHelper("overlays");
+  const helperLog = await waitForHelper(90);
+  log("Helper log:\n" + helperLog);
+  if (!/RESULT: ok/.test(helperLog)) throw new Error("The helper could not draw the title and arrow (see log)");
+  return outDir;
+}
+
+// Loudness of the voiceover on the sequence's clock (null if the helper couldn't copy it).
+async function readLoudness(cutSeconds) {
+  try {
+    const entry = await fs.getEntryWithUrl("file:" + VO_WAV);
+    const loud = loudnessFromWav(await entry.read({ format: uxp.storage.formats.binary }));
+    if (loud) loud.offset = cutSeconds;
+    return loud;
+  } catch (err) {
+    log(`  no loudness info (${err.message || err}); using the transcript's pauses only`);
+    return null;
+  }
+}
+
+async function itemsOn(seq, trackIndex) {
+  const track = await seq.getVideoTrack(trackIndex);
+  return track ? track.getTrackItems(ppro.Constants.TrackItemType.CLIP, false) : [];
+}
+
+// Put a picture on a video track from `start` to `end` (seconds), over whatever is there.
+async function placePicture(project, seq, path, trackIndex, start, end) {
+  const clip = await importPath(project, path);
+  try {
+    // a still's length on the timeline comes from its in/out points
+    transaction(project, "VidAuto: picture length", () => [clip.createSetInOutPointsAction(tickTimeAt(0), tickTimeAt(end - start))]);
+  } catch (err) {
+    log(`  setting the picture's length first: ${err.message || err}`);
+  }
+  const editor = ppro.SequenceEditor.getEditor(seq);
+  transaction(project, "VidAuto: add picture", () => [
+    editor.createOverwriteItemAction(ppro.ProjectItem.cast(clip), tickTimeAt(start), trackIndex, 0),
+  ]);
+  let item = null;
+  for (const it of await itemsOn(seq, trackIndex)) {
+    if (Math.abs(secondsOf(await it.getStartTime()) - start) < 0.1) item = it;
+  }
+  need(item, `The picture did not land on V${trackIndex + 1} at ${formatTime(start)}`);
+  let placedEnd = secondsOf(await item.getEndTime());
+  if (Math.abs(placedEnd - end) > 0.1) {
+    transaction(project, "VidAuto: picture end", () => [item.createSetEndAction(tickTimeAt(end))]);
+    placedEnd = secondsOf(await item.getEndTime());
+  }
+  log(`  V${trackIndex + 1}: ${path.split("/").pop()} ${start.toFixed(2)}s to ${placedEnd.toFixed(2)}s`);
+  if (Math.abs(placedEnd - end) > 0.2) throw new Error(`The picture on V${trackIndex + 1} ends at ${placedEnd}s instead of ${end}s`);
+  return item;
+}
+
+// Take everything off a video track (switch it off if Premiere won't remove it).
+async function clearTrack(project, seq, trackIndex) {
+  const items = await itemsOn(seq, trackIndex);
+  if (!items.length) return;
+  try {
+    let selection = null;
+    ppro.TrackItemSelection.createEmptySelection((sel) => {
+      selection = sel;
+    });
+    need(selection, "no selection");
+    items.forEach((it) => selection.addItem(it, true));
+    const editor = ppro.SequenceEditor.getEditor(seq);
+    transaction(project, "VidAuto: clear track", () => [
+      editor.createRemoveItemsAction(selection, false, ppro.Constants.MediaType.VIDEO),
+    ]);
+  } catch (err) {
+    log(`  couldn't remove V${trackIndex + 1}'s pictures (${err.message || err}); switching them off instead`);
+    transaction(project, "VidAuto: pictures off", () => items.map((it) => it.createSetDisabledAction(true)));
+  }
+}
+
+// Where the clips go, from the transcript's pauses and the voiceover's quiet spots.
+function clipCuts(total, transcript, cutSeconds, loud) {
+  const words = sequenceWords(transcript, cutSeconds);
+  const cuts = planClips(total, cutCandidates(words, loud));
+  cuts.slice(1).forEach((end, i) => {
+    const before = words.filter((w) => w.end <= end + 0.05).slice(-6).map((w) => w.text).join(" ");
+    log(`  Part ${i + 1}: ${formatTime(cuts[i])} to ${formatTime(end)} (${(end - cuts[i]).toFixed(1)}s), ends "...${before}"`);
+  });
+  return cuts;
+}
+
+// Title and arrows, full video export, then each clip. `folderPath` is where the videos go.
+async function titleArrowAndClips(project, seq, folderPath, title, voPath, total) {
+  const folderName = folderPath.split("/").pop();
+  const trackCount = await seq.getVideoTrackCount();
+  log(`  sequence has ${trackCount} video track(s)`);
+  // one title picture per possible clip; how many are used depends on where the pauses fall
+  const most = Math.ceil(total / MIN_CLIP) + 1;
+  const labels = ["Full Video", ...Array.from({ length: most }, (_, i) => `Part ${i + 1}`)];
+  const dir = await makeOverlays(folderName, title, labels, voPath);
+  const loud = await readLoudness(state.cut.seconds);
+  if (loud) log(`  loudness read (${loud.rms.length} steps)`);
+  const cuts = clipCuts(total, state.transcript, state.cut.seconds, loud);
+
+  // Full video: title the whole way, arrow at 1/5, 2/5, 3/5 and 4/5
+  await placePicture(project, seq, `${dir}/title-1.png`, TITLE_TRACK, 0, total);
+  for (const t of fullArrowTimes(total)) {
+    await placePicture(project, seq, `${dir}/arrow.png`, ARROW_TRACK, t, Math.min(total, t + ARROW_SECONDS));
+  }
+  const fullName = outputName(title, "Full Video");
+  await exportTo(seq, `${folderPath}/${fullName}`, EXPORT_PRESET, true);
+
+  // Clips: "(Part N)" titles, arrow 5 seconds into each
+  await clearTrack(project, seq, ARROW_TRACK);
+  await clearTrack(project, seq, TITLE_TRACK);
+  const parts = cuts.length - 1;
+  for (let k = 0; k < parts; k++) {
+    await placePicture(project, seq, `${dir}/title-${k + 2}.png`, TITLE_TRACK, cuts[k], cuts[k + 1]);
+    const at = cuts[k] + CLIP_ARROW_AT;
+    if (at + ARROW_SECONDS < cuts[k + 1]) {
+      await placePicture(project, seq, `${dir}/arrow.png`, ARROW_TRACK, at, at + ARROW_SECONDS);
+    }
+  }
+  for (let k = 0; k < parts; k++) {
+    transaction(project, "VidAuto: clip in/out", () => [
+      seq.createSetInPointAction(tickTimeAt(cuts[k])),
+      seq.createSetOutPointAction(tickTimeAt(cuts[k + 1])),
+    ]);
+    log(`  in/out now ${secondsOf(await seq.getInPoint())}s to ${secondsOf(await seq.getOutPoint())}s`);
+    await exportTo(seq, `${folderPath}/${outputName(title, `Part ${k + 1}`)}`, EXPORT_PRESET, false);
+  }
+  return { fullName, parts };
+}
+
+// Test step: title, arrow and clips for the sequence made in steps 1-4 (captions optional).
+async function testTitleAndClips() {
+  const project = await activeProject();
+  const seq = need(state.sequence, "Run steps 1-4 first");
+  need(state.transcript && state.cut, "Run steps 2-3 first");
+  log("Pick a folder with a title.txt in it; the test videos are saved there");
+  const folder = need(await fs.getFolder(), "No folder picked");
+  const title = await readTitle(folder.nativePath);
+  const total = need(await audioItemInfo(seq), "The voiceover is missing from the sequence").end;
+  const done = await titleArrowAndClips(project, seq, folder.nativePath, title, await state.clip.getMediaFilePath(), total);
+  return `${done.fullName} + ${done.parts} clip(s)`;
 }
 
 // ------------------------------------------------------------------ full run
@@ -693,6 +866,8 @@ async function placeOnV1(project, seq, vclip) {
 
 async function makeVideo(project, folderPath, voiceoverName, usage) {
   const vo = folderPath + "/" + voiceoverName;
+  const title = await readTitle(folderPath); // check first, before any work
+  log(`  title: ${title}`);
   state.clip = await importPath(project, vo);
   log(`  voiceover: ${voiceoverName}`);
   state.transcript = await getTranscript(state.clip);
@@ -721,11 +896,11 @@ async function makeVideo(project, folderPath, voiceoverName, usage) {
 
   await createCaptions();
   await fixCaptionWords();
-  await exportTo(seq, folderPath + "/AITA.mp4", EXPORT_PRESET);
-
+  // the footage counts as used once the full video is being made
   usage[used.name] = { ...usage[used.name], usedUpTo: used.end };
   await saveUsage(usage);
-  return used;
+  const done = await titleArrowAndClips(project, seq, folderPath, title, vo, needed);
+  return { ...used, ...done };
 }
 
 async function runAll() {
@@ -748,7 +923,7 @@ async function runAll() {
     const todo = foldersToDo(folders);
     if (!todo.length) {
       status.className = "status ok";
-      status.textContent = "Nothing to do: every date folder with a voiceover already has AITA.mp4";
+      status.textContent = "Nothing to do: every date folder with a voiceover already has its full video";
       log(status.textContent);
       return;
     }
@@ -759,7 +934,7 @@ async function runAll() {
       log(`--- ${f.name} (${i + 1} of ${todo.length})`);
       status.textContent = `working on ${f.name} (${i + 1} of ${todo.length})... keep hands off the mouse`;
       last = await makeVideo(project, CLIPS_DIR + "/" + f.name, f.voiceover, usage);
-      log(`  done: ${f.name}/AITA.mp4. ${last.name} has ${formatTime(last.remainingAfter)} left`);
+      log(`  done: ${f.name}: ${last.fullName} and ${last.parts} clip(s). ${last.name} has ${formatTime(last.remainingAfter)} left`);
     }
     status.className = "status ok";
     status.textContent = `Done: ${todo.length} video(s). ${last.name} has ${formatTime(last.remainingAfter)} of footage left.`;
@@ -832,6 +1007,7 @@ const STEPS = [
   ["Create captions", createCaptions],
   ["Fix A-Hole in captions", fixCaptionWords],
   ["Test export", testExport],
+  ["Title, arrow & clips", testTitleAndClips],
 ];
 
 STEPS.forEach(([name, fn], n) => {
