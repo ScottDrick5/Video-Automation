@@ -19,7 +19,7 @@ const HELPER_APP = HELPER_DIR + "/VidAuto Caption Helper.app";
 const HELPER_LOG = HELPER_DIR + "/helper-log.txt";
 const TERMS_FILE = HELPER_DIR + "/terms.txt"; // words for the helper to replace (links lose "?..." parts)
 const TICKS_PER_SECOND = 254016000000;
-const PLUGIN_VERSION = "0.3.3";
+const PLUGIN_VERSION = "0.3.4";
 
 const state = { clip: null, transcript: null, cut: null, sequence: null };
 
@@ -781,7 +781,14 @@ async function showSourceStatus() {
   try {
     const videos = (await sourceVideos()).sort((a, b) => a.created - b.created || a.name.localeCompare(b.name));
     const usage = await loadUsage();
-    const current = videos.find((v) => !(usage[v.name] || {}).exhausted);
+    let current = videos.find((v) => !(usage[v.name] || {}).exhausted);
+    if (!current && videos.length) {
+      // everything is marked used up: still show the newest so its start can be reset
+      current = videos[videos.length - 1];
+      el.textContent = `Source video: ${current.name} is marked used up. Set a start below to reuse it, or add a new video.`;
+      state.currentSource = current.name;
+      return;
+    }
     if (!current) {
       el.textContent = "No usable source video. Download one into Source Video.";
       return;
@@ -808,6 +815,7 @@ async function setUsedUpTo() {
   }
   const usage = await loadUsage();
   usage[state.currentSource] = { ...(usage[state.currentSource] || {}), usedUpTo: seconds };
+  delete usage[state.currentSource].exhausted; // setting a start means "use this video again from here"
   await saveUsage(usage);
   log(`${state.currentSource}: next video starts at ${tc} (${formatTime(seconds)})`);
   await showSourceStatus();
