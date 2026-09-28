@@ -35,14 +35,14 @@ const DURATIONS_IN = HELPER_DIR + "/durations-in.txt"; // voiceovers to measure
 const DURATIONS_OUT = HELPER_DIR + "/durations-out.txt";
 const NOTIFY_FILE = HELPER_DIR + "/notify.txt";
 const STORIES_COUNT = HELPER_DIR + "/stories-count.txt"; // how many stories (0 = the rest of the week)
-const STORIES_USED = AITA_DIR + "/vidauto-stories.json"; // stories made so far (with their date folders)
-const TITLE_FILE = "title.txt"; // story title, in each date folder (until Stage 0 writes it)
+const TITLE_FILE = "title.txt";
+const DONE_MARKER = "vidauto-done.txt"; // written once the full video and every clip are exported // story title, in each date folder (until Stage 0 writes it)
 const TITLE_TRACK = 1; // V2
 const ARROW_TRACK = 2; // V3
 const ARROW_SECONDS = 5;
 const CLIP_ARROW_AT = 5; // seconds into each clip
 const TICKS_PER_SECOND = 254016000000;
-const PLUGIN_VERSION = "0.6.1";
+const PLUGIN_VERSION = "0.6.2";
 
 const state = { clip: null, transcript: null, cut: null, sequence: null };
 
@@ -171,29 +171,79 @@ async function clearHelperLog() {
   }
 }
 
-async function findClipByPath(project, path) {
+// Same file? (Premiere may report /private/... or different letter case for the same path)
+function samePath(a, b) {
+  const n = (p) => String(p || "").replace(/^\/private(?=\/)/, "").toLowerCase();
+  return n(a) === n(b);
+}
+
+// Every clip in the project with its file path, in one pass (asking for many paths at once is much faster
+// than one at a time, which matters once the project holds hundreds of items)
+async function projectClips(project) {
   const root = await project.getRootItem();
-  const queue = [...(await root.getItems())];
-  let match = null;
-  while (queue.length) {
-    const item = queue.shift();
-    const folder = ppro.FolderItem.cast(item);
-    if (folder) {
-      queue.push(...(await folder.getItems()));
-      continue;
+  let level = [...(await root.getItems())];
+  const out = [];
+  while (level.length) {
+    const next = [];
+    const clips = [];
+    for (const item of level) {
+      const folder = ppro.FolderItem.cast(item);
+      if (folder) next.push(folder);
+      else {
+        const clip = ppro.ClipProjectItem.cast(item);
+        if (clip) clips.push(clip);
+      }
     }
-    const clip = ppro.ClipProjectItem.cast(item);
-    if (clip && (await clip.getMediaFilePath()) === path) match = clip;
+    const paths = await Promise.all(clips.map((c) => Promise.resolve().then(() => c.getMediaFilePath()).catch(() => "")));
+    clips.forEach((c, i) => out.push({ clip: c, path: paths[i] }));
+    level = (await Promise.all(next.map((f) => f.getItems()))).flat();
   }
-  return match;
+  return out;
+}
+
+const clipCache = new Map(); // path -> ClipProjectItem, for this session
+
+async function findClipByPath(project, path) {
+  for (const { clip, path: p } of await projectClips(project)) {
+    if (p) clipCache.set(p, clip);
+  }
+  for (const [p, clip] of clipCache) if (samePath(p, path)) return clip;
+  return null;
+}
+
+// Import files that aren't in the project yet (all in one go) and return their clips, in order.
+async function importPaths(project, paths) {
+  const cached = (p) => [...clipCache].find(([k]) => samePath(k, p));
+  let missing = paths.filter((p) => !cached(p));
+  if (missing.length) {
+    await findClipByPath(project, missing[0]); // refresh the cache
+    missing = paths.filter((p) => !cached(p));
+  }
+  if (missing.length) {
+    const ok = await project.importFiles(missing, true, null, false);
+    if (!ok) throw new Error(`Premiere refused to import ${missing.join(", ")}`);
+    // Premiere can take a moment to list new items
+    for (let i = 0; i < 15 && missing.some((p) => !cached(p)); i++) {
+      if (i) await new Promise((r) => setTimeout(r, 2000));
+      await findClipByPath(project, missing[0]);
+    }
+    const lost = missing.filter((p) => !cached(p));
+    if (lost.length) throw new Error(`Imported ${lost.join(", ")}, but could not find it in the project`);
+  }
+  const found = paths.map((p) => cached(p)[1]);
+  // a clip remembered from earlier may no longer be valid (Premiere replaces some objects after changes)
+  try {
+    await Promise.all(found.map((c) => c.getMediaFilePath()));
+    return found;
+  } catch (err) {
+    clipCache.clear();
+    await findClipByPath(project, paths[0]);
+    return paths.map((p) => need(cached(p), `Could not find ${p} in the project`)[1]);
+  }
 }
 
 async function importPath(project, path) {
-  let clip = await findClipByPath(project, path);
-  if (clip) return clip;
-  const ok = await project.importFiles([path], true, null, false);
-  if (!ok) throw new Error(`Premiere refused to import ${path}`);
-  return need(await findClipByPath(project, path), `Imported ${path}, but could not find it in the project`);
+  return (await importPaths(project, [path]))[0];
 }
 
 async function activeProject() {
@@ -652,6 +702,11 @@ async function titleArrowAndClips(project, seq, folderPath, title, voPath, total
   if (loud) log(`  loudness read (${loud.rms.length} steps)`);
   const cuts = clipCuts(total, state.transcript, state.cut.seconds, loud);
 
+  // bring in every picture needed at once (one import is much faster than many)
+  const t0 = Date.now();
+  await importPaths(project, [`${dir}/arrow.png`, ...Array.from({ length: cuts.length }, (_, i) => `${dir}/title-${i + 1}.png`)]);
+  log(`  pictures imported in ${Math.round((Date.now() - t0) / 1000)}s`);
+
   // Full video: title the whole way, arrow at 1/5, 2/5, 3/5 and 4/5
   await placePicture(project, seq, `${dir}/title-1.png`, TITLE_TRACK, 0, total);
   for (const t of fullArrowTimes(total)) {
@@ -679,6 +734,7 @@ async function titleArrowAndClips(project, seq, folderPath, title, voPath, total
     log(`  in/out now ${secondsOf(await seq.getInPoint())}s to ${secondsOf(await seq.getOutPoint())}s`);
     await exportTo(seq, `${folderPath}/${outputName(title, `Part ${k + 1}`)}`, EXPORT_PRESET, false);
   }
+  await writeTextFile(`${folderPath}/${DONE_MARKER}`, `full video and ${parts} clip(s) made ${new Date().toString()}\n`);
   return { fullName, parts };
 }
 
@@ -1035,24 +1091,21 @@ async function notify(ok, message) {
 }
 
 // Stage 0: the helper runs Get Stories (this week's missing dates). Its progress is copied into this log.
-async function storyFolders() {
-  try {
-    return JSON.parse((await readTextFile(STORIES_USED)) || '{"stories":[]}').stories.map((x) => x.folder);
-  } catch (e) {
-    return [];
-  }
-}
-
 async function getStories(count = 0) {
   await writeTextFile(STORIES_COUNT, `${count}\n`);
   let seen = ((await readTextFile(STORIES_LOG)) || "").length;
+  const made = [];
   const copyNewLines = async () => {
     const text = (await readTextFile(STORIES_LOG)) || "";
     if (text.length < seen) seen = 0; // log was replaced
     const fresh = text.slice(seen).trim();
     seen = text.length;
     if (fresh) {
-      fresh.split(/\n/).forEach((l) => log("  " + l.replace(/^\S+\s+(AM|PM)?\s*/, "")));
+      fresh.split(/\n/).forEach((l) => {
+        log("  " + l.replace(/^\S+\s+(AM|PM)?\s*/, ""));
+        const m = l.match(/saved \S+ and title\.txt in (\S+)\s*$/);
+        if (m) made.push(m[1]);
+      });
       const lastStory = fresh.match(/Story for (\S+)/g);
       if (lastStory) setRunStatus("", `getting stories: ${lastStory.pop().replace("Story for ", "")}... keep hands off the mouse and Chrome`);
     }
@@ -1071,7 +1124,7 @@ async function getStories(count = 0) {
   await copyNewLines();
   const result = (helperLog.match(/(RESULT|ERROR)[^\n]*/) || ["no result from the helper"])[0];
   log(`  stories: ${result}`);
-  return result.replace(/^RESULT:\s*/, "");
+  return { text: result.replace(/^RESULT:\s*/, ""), folders: made };
 }
 
 // Voiceover lengths in seconds (through the helper's afinfo), keyed by path
@@ -1149,10 +1202,12 @@ async function runButton(which) {
       project = await activeProject();
       log(`Project: ${project.name}`);
     }
-    const before = await storyFolders();
-    if (which !== "videos") stories = await getStories(testOne ? 1 : 0);
-    // in a test Run, make the video for the story just made (if there is one)
-    const fresh = (await storyFolders()).filter((f) => !before.includes(f));
+    let fresh = [];
+    if (which !== "videos") {
+      const got = await getStories(testOne ? 1 : 0);
+      stories = got.text;
+      fresh = got.folders; // in a test Run, make the video for the story just made (if there is one)
+    }
     if (which === "all" && testOne) {
       log(fresh.length ? `  test: making the video for ${fresh[0]}` : "  test: no new story was made; making the oldest waiting video instead");
     }

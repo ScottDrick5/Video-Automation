@@ -9,14 +9,19 @@ function folderDate(name) {
 }
 
 // Date folders that still need a video, oldest posting date first. A folder is done once it has
-// "AITA - <title> (Full Video).mp4" (or AITA.mp4 from before the clips were automated).
+// vidauto-done.txt (written after the full video and all clips are exported), the full video plus its Part 1
+// (folders finished before that file existed), or AITA.mp4 from before the clips were automated.
+// A folder with only the full video (the clips failed) is made again.
 // folders: [{ name, files: [fileName, ...] }]
 const AUDIO = /\.(aac|mp3|wav|m4a)$/i;
-const DONE = /^aita\.mp4$|\(full video\)\.mp4$/i;
+function isDone(files) {
+  const has = (re) => files.some((n) => re.test(n));
+  return has(/^vidauto-done\.txt$/i) || has(/^aita\.mp4$/i) || (has(/\(full video\)\.mp4$/i) && has(/\(part 1\)\.mp4$/i));
+}
 function foldersToDo(folders) {
   return folders
     .filter((f) => folderDate(f.name) !== null)
-    .filter((f) => !f.files.some((n) => DONE.test(n)))
+    .filter((f) => !isDone(f.files))
     .map((f) => ({ ...f, voiceover: f.files.filter((n) => AUDIO.test(n)).sort().pop() || null }))
     .filter((f) => f.voiceover)
     .sort((a, b) => folderDate(a.name) - folderDate(b.name));
