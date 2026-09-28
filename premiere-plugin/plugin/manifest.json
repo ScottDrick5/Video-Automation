@@ -1,7 +1,7 @@
 {
   "id": "com.vidauto.aita.test",
-  "name": "VidAuto Test",
-  "version": "0.2.1",
+  "name": "VidAuto",
+  "version": "0.3.0",
   "main": "index.html",
   "host": {
     "app": "premierepro",
@@ -26,7 +26,7 @@
       "type": "panel",
       "id": "vidautoTestPanel",
       "label": {
-        "default": "VidAuto Test"
+        "default": "VidAuto"
       },
       "minimumSize": {
         "width": 320,

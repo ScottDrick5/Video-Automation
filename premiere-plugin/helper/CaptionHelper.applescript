@@ -220,16 +220,20 @@ on fixAHole(terms)
 	end try
 end fixAHole
 
--- "vidauto-helper://ahole?terms=ahole,asshole" -> {"ahole", "asshole"} (all three if none given)
-on termsFromURL(theURL)
-	if theURL does not contain "terms=" then return {"ahole", "a-hole", "asshole"}
-	set AppleScript's text item delimiters to "terms="
-	set termPart to text item 2 of theURL
-	set AppleScript's text item delimiters to ","
-	set out to text items of termPart
-	set AppleScript's text item delimiters to ""
-	return out
-end termsFromURL
+-- Words to replace, written by the plugin to /Users/Shared/VidAuto/terms.txt as "ahole,asshole"
+-- (links can't carry them: Premiere drops everything after "?"). All three if the file is missing.
+on wantedTerms()
+	try
+		set t to do shell script "cat /Users/Shared/VidAuto/terms.txt"
+		set AppleScript's text item delimiters to ","
+		set out to text items of t
+		set AppleScript's text item delimiters to ""
+		if out is not {} and item 1 of out is not "" then return out
+	on error
+		set AppleScript's text item delimiters to ""
+	end try
+	return {"ahole", "a-hole", "asshole"}
+end wantedTerms
 
 on run
 	createCaptions()
@@ -238,7 +242,7 @@ end run
 -- vidauto-helper://captions creates captions; vidauto-helper://ahole fixes A-Hole in them
 on open location theURL
 	if theURL starts with "vidauto-helper://ahole" then
-		my fixAHole(my termsFromURL(theURL))
+		my fixAHole(my wantedTerms())
 	else
 		createCaptions()
 	end if

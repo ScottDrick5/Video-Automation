@@ -1,15 +1,25 @@
-// VidAuto test panel: runs each automation step on its own so we can see which ones Premiere allows.
+// VidAuto panel. "Run" makes an AITA.mp4 for every date folder that has a voiceover but no video yet.
+// The numbered test buttons below it run single steps, for troubleshooting.
 
 const ppro = require("premierepro");
 const uxp = require("uxp");
 const fs = uxp.storage.localFileSystem;
 const { findCutPoint, flattenWords, aholeTerms } = require("./lib/transcript.js");
+const { foldersToDo, chooseSource, fillScale, timecodeToSeconds, formatTime } = require("./lib/plan.js");
+
+// Your folders
+const AITA_DIR = "/Users/drick/Documents/AITA";
+const CLIPS_DIR = AITA_DIR + "/New Video Clips";       // one folder per posting date, e.g. 9-25-26
+const SOURCE_DIR = AITA_DIR + "/Source Video";         // downloaded videos, used oldest first
+const EXPORT_PRESET = AITA_DIR + "/AITA.epr";          // your export settings
+const USAGE_FILE = AITA_DIR + "/vidauto-usage.json";   // how far into each source video we've used
 
 const HELPER_DIR = "/Users/Shared/VidAuto";
 const HELPER_APP = HELPER_DIR + "/VidAuto Caption Helper.app";
 const HELPER_LOG = HELPER_DIR + "/helper-log.txt";
+const TERMS_FILE = HELPER_DIR + "/terms.txt"; // words for the helper to replace (links lose "?..." parts)
 const TICKS_PER_SECOND = 254016000000;
-const PLUGIN_VERSION = "0.2.1";
+const PLUGIN_VERSION = "0.3.0";
 
 const state = { clip: null, transcript: null, cut: null, sequence: null };
 
@@ -86,6 +96,27 @@ async function readTextFile(path) {
   }
 }
 
+async function writeTextFile(path, text) {
+  const slash = path.lastIndexOf("/");
+  const folder = await fs.getEntryWithUrl("file:" + path.slice(0, slash));
+  const file = await folder.createFile(path.slice(slash + 1), { overwrite: true });
+  await file.write(text);
+}
+
+async function listFolder(path) {
+  const folder = await fs.getEntryWithUrl("file:" + path);
+  return folder.getEntries();
+}
+
+async function exists(path) {
+  try {
+    await fs.getEntryWithUrl("file:" + path);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 async function clearHelperLog() {
   try {
     const entry = await fs.getEntryWithUrl("file:" + HELPER_LOG);
@@ -110,6 +141,14 @@ async function findClipByPath(project, path) {
     if (clip && (await clip.getMediaFilePath()) === path) match = clip;
   }
   return match;
+}
+
+async function importPath(project, path) {
+  let clip = await findClipByPath(project, path);
+  if (clip) return clip;
+  const ok = await project.importFiles([path], true, null, false);
+  if (!ok) throw new Error(`Premiere refused to import ${path}`);
+  return need(await findClipByPath(project, path), `Imported ${path}, but could not find it in the project`);
 }
 
 async function activeProject() {
@@ -144,40 +183,47 @@ async function importVoiceover() {
   const file = need(await fs.getFileForOpening({ types: ["mp3", "wav", "m4a", "aac", "mp4"] }), "No file picked");
   const path = file.nativePath;
   log(`Picked: ${path}`);
-  let clip = await findClipByPath(project, path);
-  if (clip) {
-    log("Already in the project, reusing it.");
-  } else {
-    const ok = await project.importFiles([path], true, null, false);
-    if (!ok) throw new Error("Premiere refused to import the file");
-    clip = need(await findClipByPath(project, path), "Imported, but could not find it in the project");
-  }
+  const clip = await importPath(project, path);
   state.clip = clip;
   state.transcript = state.cut = null;
   return clip.name;
 }
 
+// Premiere transcribes new clips on import (your setting). Wait for that; if nothing shows up, ask for it.
+async function getTranscript(clip, maxSeconds = 600) {
+  const read = async () => {
+    try {
+      const json = await ppro.Transcript.exportToJSON(clip);
+      return json && json.includes("segments") ? json : null;
+    } catch (e) {
+      return null;
+    }
+  };
+  let json = await read();
+  const t0 = Date.now();
+  let asked = false;
+  while (!json && Date.now() - t0 < maxSeconds * 1000) {
+    if (!asked && Date.now() - t0 > 20000) {
+      asked = true;
+      log("  no transcript yet, asking Premiere to transcribe...");
+      try {
+        await ppro.Transcript.transcribeClipProjectItem(clip);
+      } catch (err) {
+        log(`  transcribe request: ${err.message || err}`);
+      }
+    }
+    await new Promise((r) => setTimeout(r, 3000));
+    json = await read();
+  }
+  need(json, "No transcript after waiting");
+  log(`  transcript ready after ${Math.round((Date.now() - t0) / 1000)}s`);
+  return JSON.parse(json);
+}
+
 async function transcribe() {
   const clip = need(state.clip, "Run step 1 first");
-  let json = null;
-  try {
-    json = await ppro.Transcript.exportToJSON(clip);
-  } catch (e) {
-    json = null;
-  }
-  if (json && json.includes("segments")) {
-    log("Clip already has a transcript, using it.");
-  } else {
-    log("Starting Premiere transcription (can take a minute or two)...");
-    const t0 = Date.now();
-    const ok = await ppro.Transcript.transcribeClipProjectItem(clip);
-    log(`transcribeClipProjectItem returned ${ok} after ${Math.round((Date.now() - t0) / 1000)}s`);
-    if (!ok) throw new Error("Premiere reported the transcription failed");
-    json = await ppro.Transcript.exportToJSON(clip);
-  }
-  need(json, "Transcript came back empty");
-  state.transcript = JSON.parse(json);
-  const saved = await saveToDataFolder("transcript-original.json", json);
+  state.transcript = await getTranscript(clip);
+  const saved = await saveToDataFolder("transcript-original.json", JSON.stringify(state.transcript));
   const words = flattenWords(state.transcript);
   log(`Saved transcript to ${saved}`);
   log(`First words: ${words.slice(0, 25).map((w) => w.text).join(" ")}`);
@@ -250,9 +296,11 @@ async function trimOnTimeline(project, seq, cutTime) {
 
 async function buildSequence() {
   const project = await activeProject();
-  const clip = need(state.clip, "Run step 1 first");
-  const cut = need(state.cut, "Run step 3 first");
+  return makeSequence(project, need(state.clip, "Run step 1 first"), need(state.cut, "Run step 3 first"),
+    "VidAuto test " + new Date().toLocaleTimeString());
+}
 
+async function makeSequence(project, clip, cut, name) {
   const cutTime = ppro.TickTime.createWithSeconds(cut.seconds);
 
   // Way A: start the clip itself at "Am I the ahole" before making the sequence.
@@ -278,7 +326,6 @@ async function buildSequence() {
     }
   }
 
-  const name = "VidAuto test " + new Date().toLocaleTimeString();
   const seq = need(await project.createSequenceFromMedia(name, [clip]), "Premiere did not create the sequence");
   state.sequence = seq;
   log(`Created sequence "${name}"`);
@@ -383,7 +430,8 @@ async function fixCaptionWords() {
   // Only search spellings that are really there: "Replace all" closes the Replace row, but a search with
   // no results would leave it open and throw off the next word.
   log(`Asking the helper to replace ${terms.join(", ")} with A-Hole in the Captions tab...`);
-  await startHelper("ahole?terms=" + terms.join(","));
+  await writeTextFile(TERMS_FILE, terms.join(","));
+  await startHelper("ahole");
   const helperLog = await waitForHelper(90);
   log("Helper log:\n" + helperLog);
   if (/ERROR/.test(helperLog) || !/RESULT: replaced/.test(helperLog)) throw new Error("The helper did not finish the replacements (see log)");
@@ -397,15 +445,256 @@ async function testExport() {
   const preset = need(await fs.getFileForOpening({ types: ["epr"] }), "No preset picked");
   log("Pick a folder for the test export");
   const folder = need(await fs.getFolder(), "No folder picked");
-  const out = folder.nativePath + "/AITA-test.mp4";
-  log(`Exporting "${seq.name}" to ${out} with ${preset.nativePath}`);
-  const t0 = Date.now();
-  const ok = await ppro.EncoderManager.getManager().exportSequence(
-    seq, ppro.Constants.ExportType.IMMEDIATELY, out, preset.nativePath
-  );
-  log(`exportSequence returned ${ok} after ${Math.round((Date.now() - t0) / 1000)}s`);
-  if (!ok) throw new Error("Premiere reported the export failed");
+  await exportTo(seq, folder.nativePath + "/AITA-test.mp4", preset.nativePath);
   return "exported AITA-test.mp4";
+}
+
+async function exportTo(seq, out, presetPath) {
+  log(`Exporting "${seq.name}" to ${out}`);
+  const t0 = Date.now();
+  const ok = await ppro.EncoderManager.getManager().exportSequence(seq, ppro.Constants.ExportType.IMMEDIATELY, out, presetPath);
+  log(`  export finished (${ok}) after ${Math.round((Date.now() - t0) / 1000)}s`);
+  if (!ok) throw new Error("Premiere reported the export failed");
+}
+
+// ------------------------------------------------------------------ full run
+
+async function loadUsage() {
+  try {
+    return JSON.parse((await readTextFile(USAGE_FILE)) || "{}");
+  } catch (e) {
+    log(`  could not read ${USAGE_FILE}, starting fresh: ${e.message}`);
+    return {};
+  }
+}
+
+async function saveUsage(usage) {
+  await writeTextFile(USAGE_FILE, JSON.stringify(usage, null, 2));
+}
+
+async function sourceVideos() {
+  const entries = await listFolder(SOURCE_DIR);
+  const videos = [];
+  for (const e of entries) {
+    if (!e.isFile || !/\.(mp4|mov|m4v|mkv|webm)$/i.test(e.name)) continue;
+    let created = 0;
+    try {
+      const meta = await e.getMetadata();
+      created = new Date(meta.dateCreated || meta.dateModified || 0).getTime();
+    } catch (err) {
+      // fall back to name order
+    }
+    videos.push({ name: e.name, created, path: e.nativePath });
+  }
+  return videos;
+}
+
+// Your Premiere can't report a clip's length or size directly, so make a throwaway sequence from the
+// whole video, read them off it, and delete it again.
+async function measureVideo(project, vclip) {
+  transaction(project, "VidAuto: clear video in/out", () => [vclip.createClearInOutPointsAction()]);
+  const tmp = need(await project.createSequenceFromMedia("VidAuto measuring", [vclip]), "Could not measure the video");
+  const size = await tmp.getFrameSize();
+  const track = await tmp.getVideoTrack(0);
+  const items = track.getTrackItems(ppro.Constants.TrackItemType.CLIP, false);
+  const duration = items.length ? secondsOf(await items[0].getEndTime()) : null;
+  await project.deleteSequence(tmp);
+  need(duration, "Could not read the video's length");
+  log(`  measured ${vclip.name}: ${formatTime(duration)}, ${size.width}x${size.height}`);
+  return { duration, width: size.width, height: size.height };
+}
+
+// Take the source video's own sound off the timeline (A2), so it's silent and can't end up in the
+// captions. If Premiere won't remove it, mute A2 and switch its clips off instead.
+async function removeVideoSound(project, seq) {
+  const a2 = await seq.getAudioTrack(1);
+  if (!a2) return;
+  const items = a2.getTrackItems(ppro.Constants.TrackItemType.CLIP, false);
+  if (!items.length) return;
+  try {
+    let selection = null;
+    ppro.TrackItemSelection.createEmptySelection((sel) => {
+      selection = sel;
+    });
+    need(selection, "no selection");
+    items.forEach((it) => selection.addItem(it, true));
+    const editor = ppro.SequenceEditor.getEditor(seq);
+    transaction(project, "VidAuto: remove video sound", () => [
+      editor.createRemoveItemsAction(selection, false, ppro.Constants.MediaType.AUDIO),
+    ]);
+    log("  removed the video's own sound");
+  } catch (err) {
+    log(`  couldn't remove the video's sound (${err.message || err}); muting it instead`);
+    await a2.setMute(true);
+    transaction(project, "VidAuto: video sound off", () => items.map((it) => it.createSetDisabledAction(true)));
+  }
+}
+
+async function setScale(project, item, percent) {
+  const chain = await item.getComponentChain();
+  let scale = null;
+  for (let i = 0; i < chain.getComponentCount() && !scale; i++) {
+    const comp = chain.getComponentAtIndex(i);
+    if (!/motion/i.test(await comp.getMatchName())) continue;
+    for (let j = 0; j < comp.getParamCount(); j++) {
+      const p = comp.getParam(j);
+      if (p.displayName === "Scale") scale = p;
+    }
+  }
+  need(scale, "Could not find the video's Scale setting");
+  transaction(project, "VidAuto: scale not animated", () => [scale.createSetTimeVaryingAction(false)]);
+  const key = scale.createKeyframe(percent);
+  transaction(project, "VidAuto: fill frame", () => [scale.createSetValueAction(key, true)]);
+}
+
+// Put the next unused part of the source video on V1: muted, filling the 1080x1920 frame, same length
+// as the voiceover. Returns what was used so the usage record can be updated after export.
+async function addVideo(project, seq, needed, usage) {
+  const videos = await sourceVideos();
+  if (!videos.length) throw new Error(`No videos in ${SOURCE_DIR}`);
+  let pick = chooseSource(videos, usage, needed);
+  while (pick.needsMeasuring) {
+    const v = videos.find((x) => x.name === pick.name);
+    const vclip = await importPath(project, v.path);
+    usage[v.name] = { ...(usage[v.name] || {}), ...(await measureVideo(project, vclip)) };
+    await saveUsage(usage);
+    pick = chooseSource(videos, usage, needed);
+  }
+  for (const s of pick.skipped || []) {
+    usage[s.name].exhausted = true; // too little left for this voiceover: move on for good
+    log(`  ${s.name} has only ${formatTime(s.left)} left, moving to the next video`);
+  }
+  if (pick.skipped && pick.skipped.length) await saveUsage(usage);
+  if (pick.error) throw new Error(pick.error);
+
+  const v = videos.find((x) => x.name === pick.name);
+  const vclip = await importPath(project, v.path);
+  const info = usage[v.name];
+  log(`  video: ${v.name} from ${formatTime(pick.start)} to ${formatTime(pick.start + needed)}`);
+  transaction(project, "VidAuto: video in/out", () => [
+    vclip.createSetInOutPointsAction(ppro.TickTime.createWithSeconds(pick.start), ppro.TickTime.createWithSeconds(pick.start + needed)),
+  ]);
+  const editor = ppro.SequenceEditor.getEditor(seq);
+  // video on V1, its own sound on A2 (the voiceover stays on A1)
+  transaction(project, "VidAuto: add video", () => [editor.createOverwriteItemAction(vclip, ppro.TickTime.TIME_ZERO, 0, 1)]);
+
+  const vItems = (await seq.getVideoTrack(0)).getTrackItems(ppro.Constants.TrackItemType.CLIP, false);
+  const vItem = need(vItems[0], "The video did not land on V1");
+  log(`  V1: ${secondsOf(await vItem.getStartTime())}s to ${secondsOf(await vItem.getEndTime())}s`);
+
+  await removeVideoSound(project, seq);
+
+  const scale = fillScale(info.width, info.height);
+  await setScale(project, vItem, scale);
+  log(`  scaled to ${scale}% to fill the frame`);
+  return { name: v.name, start: pick.start, end: pick.start + needed, remainingAfter: pick.remainingAfter };
+}
+
+async function makeVideo(project, folderPath, voiceoverName, usage) {
+  const vo = folderPath + "/" + voiceoverName;
+  state.clip = await importPath(project, vo);
+  log(`  voiceover: ${voiceoverName}`);
+  state.transcript = await getTranscript(state.clip);
+  state.cut = need(findCutPoint(state.transcript), '"Am I the ahole" (any spelling) not found in the voiceover');
+  log(`  cut at ${state.cut.seconds.toFixed(2)}s -> starts "${state.cut.after}..."`);
+
+  await makeSequence(project, state.clip, state.cut, folderPath.split("/").pop());
+  const seq = state.sequence;
+  const needed = need(await audioItemInfo(seq), "The voiceover is missing from the sequence").end;
+  log(`  voiceover length ${formatTime(needed)}`);
+
+  const used = await addVideo(project, seq, needed, usage);
+  await project.setActiveSequence(seq);
+  await project.openSequence(seq);
+
+  await createCaptions();
+  await fixCaptionWords();
+  await exportTo(seq, folderPath + "/AITA.mp4", EXPORT_PRESET);
+
+  usage[used.name] = { ...usage[used.name], usedUpTo: used.end };
+  await saveUsage(usage);
+  return used;
+}
+
+async function runAll() {
+  const status = document.getElementById("runStatus");
+  const button = document.getElementById("run");
+  button.setAttribute("disabled", "");
+  status.className = "status";
+  status.textContent = "working... keep hands off the mouse";
+  log("=== Run");
+  try {
+    const project = await activeProject();
+    log(`Project: ${project.name}`);
+    for (const [path, what] of [[CLIPS_DIR, "date folders"], [SOURCE_DIR, "source videos"], [EXPORT_PRESET, "export preset"]]) {
+      if (!(await exists(path))) throw new Error(`Can't find the ${what}: ${path}`);
+    }
+    const folders = [];
+    for (const e of await listFolder(CLIPS_DIR)) {
+      if (e.isFolder) folders.push({ name: e.name, files: (await e.getEntries()).map((f) => f.name) });
+    }
+    const todo = foldersToDo(folders);
+    if (!todo.length) {
+      status.className = "status ok";
+      status.textContent = "Nothing to do: every date folder with a voiceover already has AITA.mp4";
+      log(status.textContent);
+      return;
+    }
+    log(`To do: ${todo.map((f) => f.name).join(", ")}`);
+    const usage = await loadUsage();
+    let last = null;
+    for (const [i, f] of todo.entries()) {
+      log(`--- ${f.name} (${i + 1} of ${todo.length})`);
+      status.textContent = `working on ${f.name} (${i + 1} of ${todo.length})... keep hands off the mouse`;
+      last = await makeVideo(project, CLIPS_DIR + "/" + f.name, f.voiceover, usage);
+      log(`  done: ${f.name}/AITA.mp4. ${last.name} has ${formatTime(last.remainingAfter)} left`);
+    }
+    status.className = "status ok";
+    status.textContent = `Done: ${todo.length} video(s). ${last.name} has ${formatTime(last.remainingAfter)} of footage left.`;
+    log(status.textContent);
+    await showSourceStatus();
+  } catch (err) {
+    status.className = "status fail";
+    status.textContent = "STOPPED: " + (err.message || err);
+    log("STOPPED: " + (err.message || err));
+    if (err.stack) log(err.stack);
+  } finally {
+    button.removeAttribute("disabled");
+  }
+}
+
+// Shows the current source video and lets you set where it's used up to (e.g. 00;07;45;01).
+async function showSourceStatus() {
+  const el = document.getElementById("sourceStatus");
+  try {
+    const videos = (await sourceVideos()).sort((a, b) => a.created - b.created || a.name.localeCompare(b.name));
+    const usage = await loadUsage();
+    const current = videos.find((v) => !(usage[v.name] || {}).exhausted);
+    if (!current) {
+      el.textContent = "No usable source video. Download one into Source Video.";
+      return;
+    }
+    const u = usage[current.name] || {};
+    const left = u.duration !== undefined ? ` (${formatTime(u.duration - (u.usedUpTo || 0))} left)` : "";
+    el.textContent = `Source video: ${current.name}, used up to ${formatTime(u.usedUpTo || 0)}${left}`;
+    state.currentSource = current.name;
+  } catch (err) {
+    el.textContent = `Source video: can't read ${SOURCE_DIR} (${err.message || err})`;
+  }
+}
+
+async function setUsedUpTo() {
+  const tc = document.getElementById("usedUpTo").value;
+  const seconds = timecodeToSeconds(tc);
+  if (seconds === null || !state.currentSource) {
+    log(`Couldn't set the start: type a timecode like 00;07;45;01`);
+    return;
+  }
+  const usage = await loadUsage();
+  usage[state.currentSource] = { ...(usage[state.currentSource] || {}), usedUpTo: seconds };
+  await saveUsage(usage);
+  log(`${state.currentSource}: next video starts at ${tc} (${formatTime(seconds)})`);
+  await showSourceStatus();
 }
 
 // ------------------------------------------------------------------ wiring
@@ -424,6 +713,10 @@ const STEPS = [
 STEPS.forEach(([name, fn], n) => {
   document.getElementById("b" + n).addEventListener("click", () => step(n, name, fn));
 });
+
+document.getElementById("run").addEventListener("click", runAll);
+document.getElementById("setUsed").addEventListener("click", setUsedUpTo);
+showSourceStatus();
 
 document.getElementById("copy").addEventListener("click", async () => {
   await navigator.clipboard.setContent({ "text/plain": document.getElementById("log").textContent });

@@ -1,8 +1,30 @@
-# VidAuto Premiere test plugin
+# VidAuto Premiere plugin
 
 A **test** panel for Premiere Pro. It runs each step of the AITA workflow on its own button, so we can
 see which ones Premiere allows before building the real thing. It only works on a copy of a voiceover
 and never deletes anything.
+
+## Daily use
+
+1. Put each voiceover in its posting-date folder: `/Users/drick/Documents/AITA/New Video Clips/<M-D-YY>/`.
+2. Keep downloaded videos in `/Users/drick/Documents/AITA/Source Video/` (used oldest first).
+3. Open **AITA Template.prproj** in Premiere, with the Text panel floating.
+4. In the **VidAuto** panel click **Run** and keep your hands off the mouse. For every date folder that has a
+   voiceover but no `AITA.mp4`, oldest date first, it:
+   - imports the voiceover and waits for Premiere's transcript,
+   - cuts everything before "Am I the ahole" and makes a 1080×1920, 29.97 fps sequence named after the folder,
+   - puts the next unused part of the source video on V1 (starting where the last video stopped), filling the
+     frame, same length as the voiceover, with the video's own sound removed,
+   - creates captions with your AITA preset and fixes ahole / a-hole / asshole → A-Hole,
+   - exports `AITA.mp4` into the same date folder with `/Users/drick/Documents/AITA/AITA.epr`.
+5. If there isn't enough video left for a voiceover, it moves to the next source video; if there is none, it
+   stops and tells you before building anything.
+
+The panel shows the current source video and how much is left. To start the next video at a particular point
+(for example after cutting a video by hand), type the timecode, e.g. `00;07;45;01`, and click
+**Set start of next video**. Progress is kept in `/Users/drick/Documents/AITA/vidauto-usage.json`.
+
+## Test steps (troubleshooting)
 
 | Button | What it checks |
 |---|---|

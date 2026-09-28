@@ -21,6 +21,7 @@ UPIA="/Library/Application Support/Adobe/Adobe Desktop Common/RemoteComponents/U
     mkdir -p "$STAGE" && cp dist/*.ccx "$STAGE/"
     # Remove an older copy first; the installer doesn't always replace an existing install.
     "$UPIA" --remove "VidAuto Test" > /dev/null 2>&1
+    "$UPIA" --remove "VidAuto" > /dev/null 2>&1
     for PKG in "VidAutoTest-folder.ccx" "VidAutoTest.ccx"; do
       echo "=== Trying $PKG"
       # The installer can print "Failed" and still exit with 0, so judge by its output.
