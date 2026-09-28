@@ -16,7 +16,6 @@ const MY_PROMPT = AITA_DIR + "/chatgpt-prompt.txt"; // your own copy of the prom
 const DOWNLOADS = HOME + "/Downloads";
 const SUBREDDIT = "BestofRedditorUpdates";
 const TITLE_QUESTION = "Can you give me a good, few-word title for this script?";
-const PICK_QUESTION = "Which one of those titles is the best? Reply with only that title.";
 const VOICES = { female: "Juniper", male: "Ember" };
 const KNOWN_VOICES = ["Juniper", "Ember", "Breeze", "Cove", "Maple", "Sol", "Spruce", "Arbor", "Vale"];
 
@@ -393,9 +392,7 @@ function makeStory(post, folder, prompt) {
     log(`  script written; perspective ${who}, so the voice is ${voice}`);
 
     log("  asking for a title...");
-    const options = ask(id, TITLE_QUESTION);
-    const best = ask(id, PICK_QUESTION);
-    const title = R.cleanTitle(best) || R.cleanTitle(options);
+    const title = R.favoriteTitle(ask(id, TITLE_QUESTION));
     if (!title) throw new Error("Couldn't read a title from ChatGPT's answer");
     log(`  title: ${title}`);
 

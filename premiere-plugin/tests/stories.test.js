@@ -50,9 +50,21 @@ test("perspective, title and file names", () => {
   assert.ok(!r.isLimitMessage("There is no limit to how much she lied."));
 });
 
-test("next free date folders", () => {
+test("next free date folders (mm-dd-yy; old 9-29-26 style names still count)", () => {
   const start = new Date(2026, 8, 28);
-  assert.strictEqual(r.folderName(start), "9-28-26");
-  const taken = new Set(["9-28-26", "9-29-26", "10-1-26"]);
-  assert.deepStrictEqual(r.nextFreeDates(start, taken, 3), ["9-30-26", "10-2-26", "10-3-26"]);
+  assert.strictEqual(r.folderName(start), "09-28-26");
+  const taken = new Set(["9-28-26", "09-29-26", "10-01-26"]);
+  assert.deepStrictEqual(r.nextFreeDates(start, taken, 3), ["09-30-26", "10-02-26", "10-03-26"]);
+});
+
+test("ChatGPT's favourite title", () => {
+  const reply = `Here are a few short, Facebook-friendly title ideas that fit the emotional tone of the story:
+1. Abandoned by Both Parents ⭐ *(my favorite)*
+2. Her Brother Became Dad
+3. The Brother Who Never Left
+
+I think "Abandoned by Both Parents" is the strongest because it immediately creates curiosity.`;
+  assert.strictEqual(r.favoriteTitle(reply), "Abandoned by Both Parents");
+  assert.strictEqual(r.favoriteTitle(reply.replace(" ⭐ *(my favorite)*", "").replace(/"Abandoned by Both Parents"/, '"Her Brother Became Dad"')), "Her Brother Became Dad");
+  assert.strictEqual(r.favoriteTitle("Ideas:\n1. First One\n2. Second One"), "First One");
 });

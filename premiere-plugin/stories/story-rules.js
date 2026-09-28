@@ -106,18 +106,43 @@ function cleanTitle(reply) {
   return null;
 }
 
-// Date folder name like the ones you use: 9-28-26
-function folderName(date) {
-  return `${date.getMonth() + 1}-${date.getDate()}-${String(date.getFullYear()).slice(-2)}`;
+// ChatGPT's favourite from its list of titles: the one marked with a star or "(my favorite)", else the one it
+// calls the strongest/best in quotes, else the first one in the list.
+function favoriteTitle(reply) {
+  const text = String(reply);
+  const lines = text.split(/\n/).map((l) => l.trim()).filter((l) => l);
+  const marked = lines.find((l) => /⭐|★|\(my favou?rite\)/i.test(l));
+  const tidy = (l) => cleanTitle(l.replace(/⭐|★|🌟|\uFE0F/g, "").replace(/\*?\(my favou?rite\)\*?/i, "").replace(/[_*]+\s*$/, ""));
+  if (marked) return tidy(marked);
+  const praised = text.match(/["“]([^"”\n]{2,80})["”][^.\n]{0,40}\b(strongest|best|favou?rite|top pick)\b/i);
+  if (praised) return cleanTitle(praised[1]);
+  const first = lines.find((l) => /^(\d+[.)]|[-*•])\s+/.test(l));
+  return first ? tidy(first) : cleanTitle(text);
 }
 
-// The next `count` dates from `start` (today) that have no folder yet. taken: Set of existing folder names.
+// Date folder name like yours: mm-dd-yy, e.g. 09-28-26
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+
+function folderName(date) {
+  return `${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}-${String(date.getFullYear()).slice(-2)}`;
+}
+
+// "9-28-26" and "09-28-26" are the same date
+function sameDateKey(name) {
+  const m = String(name).match(/^(\d{1,2})-(\d{1,2})-(\d{2}|\d{4})$/);
+  return m ? `${Number(m[1])}-${Number(m[2])}-${m[3].slice(-2)}` : String(name);
+}
+
+// The next `count` dates from `start` (today) that have no folder yet. taken: existing folder names.
 function nextFreeDates(start, taken, count) {
+  const have = new Set([...taken].map(sameDateKey));
   const out = [];
   const d = new Date(start.getFullYear(), start.getMonth(), start.getDate());
   for (let i = 0; out.length < count && i < 400; i++) {
     const name = folderName(d);
-    if (!taken.has(name)) out.push(name);
+    if (!have.has(sameDateKey(name))) out.push(name);
     d.setDate(d.getDate() + 1);
   }
   return out;
@@ -141,6 +166,6 @@ function isLimitMessage(text) {
 if (typeof module !== "undefined") {
   module.exports = {
     SKIP_WARNINGS, MIN_WORDS, MAX_WORDS, cleanPostText, wordCount, contentWarnings, skipReason, pickStories,
-    perspectiveOf, cleanTitle, folderName, nextFreeDates, isVoiceoverFile, voiceOfFile, isLimitMessage,
+    perspectiveOf, cleanTitle, favoriteTitle, folderName, nextFreeDates, isVoiceoverFile, voiceOfFile, isLimitMessage,
   };
 }
