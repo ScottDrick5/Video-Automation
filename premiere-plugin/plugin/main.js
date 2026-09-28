@@ -9,7 +9,7 @@ const HELPER_DIR = "/Users/Shared/VidAuto";
 const HELPER_APP = HELPER_DIR + "/VidAuto Caption Helper.app";
 const HELPER_LOG = HELPER_DIR + "/helper-log.txt";
 const TICKS_PER_SECOND = 254016000000;
-const PLUGIN_VERSION = "0.1.3";
+const PLUGIN_VERSION = "0.1.4";
 
 const state = { clip: null, transcript: null, cut: null, sequence: null };
 
@@ -280,28 +280,116 @@ async function fixTranscript() {
   return `${changes.length} fixed`;
 }
 
+async function audioItemInfo(seq) {
+  const track = await seq.getAudioTrack(0);
+  const items = track.getTrackItems(ppro.Constants.TrackItemType.CLIP, false);
+  if (!items.length) return null;
+  const it = items[0];
+  return {
+    item: it,
+    start: secondsOf(await it.getStartTime()),
+    end: secondsOf(await it.getEndTime()),
+    in: secondsOf(await it.getInPoint()),
+  };
+}
+
+async function trimOnTimeline(project, seq, cutTime) {
+  const before = need(await audioItemInfo(seq), "The new sequence has no voiceover on A1");
+  log(`  timeline clip before: starts ${before.start}s, ends ${before.end}s, source in ${before.in}s`);
+  const it = before.item;
+  const ways = [
+    ["timeline in point", () => [it.createSetInPointAction(cutTime)]],
+    ["timeline start", () => [it.createSetStartAction(cutTime)]],
+  ];
+  let trimmed = false;
+  for (const [wayName, makeActions] of ways) {
+    try {
+      transaction(project, "VidAuto: trim voiceover", makeActions);
+      const now = await audioItemInfo(seq);
+      log(`  ${wayName}: worked -> starts ${now.start}s, ends ${now.end}s, source in ${now.in}s`);
+      if (now.in >= cutTime.seconds - 0.05) {
+        trimmed = true;
+        break;
+      }
+      log(`  ${wayName}: did not cut the start off, trying the next way`);
+    } catch (err) {
+      log(`  ${wayName}: failed: ${err.message || err}`);
+    }
+  }
+  if (!trimmed) throw new Error("None of the ways to cut the start of the voiceover worked");
+
+  // Slide the trimmed voiceover back to 0:00 if it isn't there.
+  const now = await audioItemInfo(seq);
+  if (now.start > 0.01) {
+    try {
+      transaction(project, "VidAuto: move voiceover to 0:00", () => [
+        now.item.createMoveAction(ppro.TickTime.createWithSeconds(-now.start)),
+      ]);
+      const moved = await audioItemInfo(seq);
+      log(`  moved to 0:00 -> starts ${moved.start}s, ends ${moved.end}s`);
+    } catch (err) {
+      throw new Error(`Cut worked but moving to 0:00 failed: ${err.message || err}`);
+    }
+  }
+}
+
 async function buildSequence() {
   const project = await activeProject();
   const clip = need(state.clip, "Run step 1 first");
   const cut = need(state.cut, "Run step 3 first");
 
-  // Start the clip at "Am I the ahole", so the sequence begins there at 0:00.
-  transaction(project, "VidAuto: set voiceover start", () => [
-    clip.createSetInPointAction(ppro.TickTime.createWithSeconds(cut.seconds)),
-  ]);
-  log(`Voiceover in point set to ${cut.seconds}s`);
+  const cutTime = ppro.TickTime.createWithSeconds(cut.seconds);
+
+  // Way A: start the clip itself at "Am I the ahole" before making the sequence.
+  // Some commands are listed but fail inside Premiere 26.0.x, so each one is tried and checked.
+  let trimmedClip = false;
+  const clipWays = [
+    ["clip in point", () => clip.createSetInPointAction(cutTime)],
+    ["clip in+out points", async () => {
+      const out = await clip.getOutPoint(ppro.Constants.MediaType.AUDIO);
+      log(`  clip out point is ${secondsOf(out)}s`);
+      return clip.createSetInOutPointsAction(cutTime, out);
+    }],
+  ];
+  for (const [wayName, makeAction] of clipWays) {
+    try {
+      const action = await makeAction();
+      transaction(project, "VidAuto: set voiceover start", () => [action]);
+      trimmedClip = true;
+      log(`  ${wayName}: worked`);
+      break;
+    } catch (err) {
+      log(`  ${wayName}: failed: ${err.message || err}`);
+    }
+  }
 
   const name = "VidAuto test " + new Date().toLocaleTimeString();
   const seq = need(await project.createSequenceFromMedia(name, [clip]), "Premiere did not create the sequence");
   state.sequence = seq;
   log(`Created sequence "${name}"`);
 
-  const settings = await seq.getSettings();
-  const rect = await settings.getVideoFrameRect();
-  rect.width = 1080;
-  rect.height = 1920;
-  await settings.setVideoFrameRect(rect);
-  transaction(project, "VidAuto: 1080x1920", () => [seq.createSetSettingsAction(settings)]);
+  // Way B: if the clip couldn't be trimmed, trim the voiceover on the timeline and slide it to 0:00.
+  // Keep going on failure so the sequence still gets its size and opens, and steps 6-7 can run.
+  let trimError = null;
+  if (!trimmedClip) {
+    try {
+      await trimOnTimeline(project, seq, cutTime);
+    } catch (err) {
+      trimError = err;
+      log(`  cutting the voiceover failed: ${err.message || err}`);
+    }
+  }
+
+  try {
+    const settings = await seq.getSettings();
+    const rect = await settings.getVideoFrameRect();
+    rect.width = 1080;
+    rect.height = 1920;
+    await settings.setVideoFrameRect(rect);
+    transaction(project, "VidAuto: 1080x1920", () => [seq.createSetSettingsAction(settings)]);
+  } catch (err) {
+    log(`  changing the frame size failed: ${err.message || err}`);
+  }
 
   const size = await seq.getFrameSize();
   const timebase = Number(await seq.getTimebase());
@@ -317,6 +405,7 @@ async function buildSequence() {
     log("A1 has no clip (unexpected)");
   }
   await project.openSequence(seq);
+  if (trimError) throw new Error("Sequence made, but the voiceover start was not cut: " + (trimError.message || trimError));
   if (size.width !== 1080 || size.height !== 1920) throw new Error("Frame size did not change to 1080x1920");
   return `${size.width}x${size.height} @ ${fps} fps`;
 }
