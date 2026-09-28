@@ -1,12 +1,13 @@
-// VidAuto panel. "Run" makes the full video and the Facebook clips for every date folder that has a
-// voiceover but no finished video yet.
+// VidAuto panel. "Run" gets this week's stories (Reddit -> ChatGPT -> voiceover, through the helper), then makes
+// the full video and the Facebook clips for every date folder that has a voiceover but no finished video yet.
+// "Get stories only" and "Make videos only" run one half.
 // The numbered test buttons below it run single steps, for troubleshooting.
 
 const ppro = require("premierepro");
 const uxp = require("uxp");
 const fs = uxp.storage.localFileSystem;
 const { findCutPoint, flattenWords, aholeTerms } = require("./lib/transcript.js");
-const { foldersToDo, chooseSource, fillScale, timecodeToSeconds, videoSizeFrom, formatTime } = require("./lib/plan.js");
+const { foldersToDo, chooseSource, footageCheck, fillScale, timecodeToSeconds, videoSizeFrom, formatTime } = require("./lib/plan.js");
 const {
   MIN_CLIP, sequenceWords, loudnessFromWav, cutCandidates, planClips, fullArrowTimes, outputName, arrowColor,
 } = require("./lib/clips.js");
@@ -29,13 +30,17 @@ const VO_PATH_FILE = HELPER_DIR + "/voiceover-path.txt"; // voiceover the helper
 const VO_WAV = HELPER_DIR + "/voiceover.wav";
 const CONVERT_JOB = HELPER_DIR + "/convert-job.txt"; // source video to convert, and where to put the copy
 const CONVERT_PROGRESS = HELPER_DIR + "/convert-progress.txt";
+const STORIES_LOG = AITA_DIR + "/vidauto-stories-log.txt"; // Get Stories' progress
+const DURATIONS_IN = HELPER_DIR + "/durations-in.txt"; // voiceovers to measure
+const DURATIONS_OUT = HELPER_DIR + "/durations-out.txt";
+const NOTIFY_FILE = HELPER_DIR + "/notify.txt";
 const TITLE_FILE = "title.txt"; // story title, in each date folder (until Stage 0 writes it)
 const TITLE_TRACK = 1; // V2
 const ARROW_TRACK = 2; // V3
 const ARROW_SECONDS = 5;
 const CLIP_ARROW_AT = 5; // seconds into each clip
 const TICKS_PER_SECOND = 254016000000;
-const PLUGIN_VERSION = "0.5.1";
+const PLUGIN_VERSION = "0.6.0";
 
 const state = { clip: null, transcript: null, cut: null, sequence: null };
 
@@ -1003,50 +1008,152 @@ async function makeVideo(project, folderPath, voiceoverName, usage) {
   return { ...used, ...done };
 }
 
-async function runAll() {
+async function dateFolders() {
+  const folders = [];
+  for (const e of await listFolder(CLIPS_DIR)) {
+    if (e.isFolder) folders.push({ name: e.name, files: (await e.getEntries()).map((f) => f.name) });
+  }
+  return folders;
+}
+
+function setRunStatus(cls, text) {
   const status = document.getElementById("runStatus");
-  const button = document.getElementById("run");
-  button.setAttribute("disabled", "");
-  status.className = "status";
-  status.textContent = "working... keep hands off the mouse";
-  log("=== Run");
+  status.className = "status" + (cls ? " " + cls : "");
+  status.textContent = text;
+}
+
+// Mac notification with a sound (through the helper)
+async function notify(ok, message) {
   try {
-    const project = await activeProject();
-    log(`Project: ${project.name}`);
-    for (const [path, what] of [[CLIPS_DIR, "date folders"], [SOURCE_DIR, "source videos"], [EXPORT_PRESET, "export preset"]]) {
-      if (!(await exists(path))) throw new Error(`Can't find the ${what}: ${path}`);
-    }
-    const folders = [];
-    for (const e of await listFolder(CLIPS_DIR)) {
-      if (e.isFolder) folders.push({ name: e.name, files: (await e.getEntries()).map((f) => f.name) });
-    }
-    const todo = foldersToDo(folders);
-    if (!todo.length) {
-      status.className = "status ok";
-      status.textContent = "Nothing to do: every date folder with a voiceover already has its full video";
-      log(status.textContent);
-      return;
-    }
-    log(`To do: ${todo.map((f) => f.name).join(", ")}`);
-    const usage = await loadUsage();
-    let last = null;
-    for (const [i, f] of todo.entries()) {
-      log(`--- ${f.name} (${i + 1} of ${todo.length})`);
-      status.textContent = `working on ${f.name} (${i + 1} of ${todo.length})... keep hands off the mouse`;
-      last = await makeVideo(project, CLIPS_DIR + "/" + f.name, f.voiceover, usage);
-      log(`  done: ${f.name}: ${last.fullName} and ${last.parts} clip(s). ${last.name} has ${formatTime(last.remainingAfter)} left`);
-    }
-    status.className = "status ok";
-    status.textContent = `Done: ${todo.length} video(s). ${last.name} has ${formatTime(last.remainingAfter)} of footage left.`;
-    log(status.textContent);
-    await showSourceStatus();
+    await writeTextFile(NOTIFY_FILE, `${ok ? "Glass" : "Basso"}\n${message}\n`);
+    await startHelper("notify");
   } catch (err) {
-    status.className = "status fail";
-    status.textContent = "STOPPED: " + (err.message || err);
-    log("STOPPED: " + (err.message || err));
+    log(`  (notification: ${err.message || err})`);
+  }
+}
+
+// Stage 0: the helper runs Get Stories (this week's missing dates). Its progress is copied into this log.
+async function getStories() {
+  let seen = ((await readTextFile(STORIES_LOG)) || "").length;
+  const copyNewLines = async () => {
+    const text = (await readTextFile(STORIES_LOG)) || "";
+    if (text.length < seen) seen = 0; // log was replaced
+    const fresh = text.slice(seen).trim();
+    seen = text.length;
+    if (fresh) {
+      fresh.split(/\n/).forEach((l) => log("  " + l.replace(/^\S+\s+(AM|PM)?\s*/, "")));
+      const lastStory = fresh.match(/Story for (\S+)/g);
+      if (lastStory) setRunStatus("", `getting stories: ${lastStory.pop().replace("Story for ", "")}... keep hands off the mouse and Chrome`);
+    }
+  };
+  log("--- Getting this week's stories (Chrome)");
+  setRunStatus("", "getting stories... keep hands off the mouse and Chrome");
+  await startHelper("stories");
+  const t0 = Date.now();
+  let helperLog = "";
+  while (Date.now() - t0 < 5 * 3600 * 1000) {
+    await new Promise((r) => setTimeout(r, 5000));
+    await copyNewLines();
+    helperLog = (await readTextFile(HELPER_LOG)) || "";
+    if (/RESULT|ERROR/.test(helperLog)) break;
+  }
+  await copyNewLines();
+  const result = (helperLog.match(/(RESULT|ERROR)[^\n]*/) || ["no result from the helper"])[0];
+  log(`  stories: ${result}`);
+  return result.replace(/^RESULT:\s*/, "");
+}
+
+// Voiceover lengths in seconds (through the helper's afinfo), keyed by path
+async function voiceoverLengths(paths) {
+  await writeTextFile(DURATIONS_IN, paths.join("\n") + "\n");
+  await writeTextFile(DURATIONS_OUT, "\n");
+  await startHelper("durations");
+  const helperLog = await waitForHelper(60);
+  const out = {};
+  for (const line of ((await readTextFile(DURATIONS_OUT)) || "").split(/\n/)) {
+    const [path, sec] = line.split("|");
+    if (path && Number(sec) > 0) out[path] = Number(sec);
+  }
+  if (!Object.keys(out).length) log("  couldn't measure the voiceovers:\n" + helperLog);
+  return out;
+}
+
+// Before making a batch: stop early if there isn't enough footage for all of it.
+async function checkFootage(todo) {
+  const paths = todo.map((f) => `${CLIPS_DIR}/${f.name}/${f.voiceover}`);
+  const lengths = await voiceoverLengths(paths);
+  if (Object.keys(lengths).length < paths.length) {
+    log("  footage check skipped: not every voiceover could be measured");
+    return;
+  }
+  // the part before "Am I the ahole" is cut off (usually 15-25 s); count 10 s of it to stay on the safe side
+  const needs = paths.map((p) => Math.max(1, lengths[p] - 10));
+  const total = needs.reduce((a, b) => a + b, 0);
+  const check = footageCheck(await sourceVideos(), await loadUsage(), needs);
+  if (check.ok === false) {
+    throw new Error(`Not enough footage for ${todo.length} videos (about ${formatTime(total)} needed). ${check.error}`);
+  }
+  log(`  footage check: about ${formatTime(total)} needed for ${todo.length} video(s)` +
+    (check.ok ? ", enough footage" : ` (${check.note})`));
+}
+
+// Stages 1-2 for every date folder with a voiceover and no full video. Returns { videos, clips, last } .
+async function makeVideos(project, withFootageCheck) {
+  for (const [path, what] of [[CLIPS_DIR, "date folders"], [SOURCE_DIR, "source videos"], [EXPORT_PRESET, "export preset"]]) {
+    if (!(await exists(path))) throw new Error(`Can't find the ${what}: ${path}`);
+  }
+  const todo = foldersToDo(await dateFolders());
+  if (!todo.length) {
+    log("Nothing to do: every date folder with a voiceover already has its full video");
+    return { videos: 0, clips: 0, last: null };
+  }
+  log(`Videos to make: ${todo.map((f) => f.name).join(", ")}`);
+  if (withFootageCheck) await checkFootage(todo);
+  const usage = await loadUsage();
+  let last = null;
+  let clips = 0;
+  for (const [i, f] of todo.entries()) {
+    log(`--- ${f.name} (${i + 1} of ${todo.length})`);
+    setRunStatus("", `making video ${f.name} (${i + 1} of ${todo.length})... keep hands off the mouse`);
+    last = await makeVideo(project, CLIPS_DIR + "/" + f.name, f.voiceover, usage);
+    clips += last.parts;
+    log(`  done: ${f.name}: ${last.fullName} and ${last.parts} clip(s). ${last.name} has ${formatTime(last.remainingAfter)} left`);
+  }
+  return { videos: todo.length, clips, last };
+}
+
+// The three buttons: everything, stories only, videos only
+async function runButton(which) {
+  const buttons = ["run", "runStories", "runVideos"].map((id) => document.getElementById(id));
+  buttons.forEach((b) => b.setAttribute("disabled", ""));
+  log(`=== ${which === "all" ? "Run (stories, then videos)" : which === "stories" ? "Get stories only" : "Make videos only"}`);
+  let stories = "";
+  try {
+    let project = null;
+    if (which !== "stories") {
+      project = await activeProject();
+      log(`Project: ${project.name}`);
+    }
+    if (which !== "videos") stories = await getStories();
+    let made = { videos: 0, clips: 0, last: null };
+    if (which !== "stories") made = await makeVideos(project, true);
+    const parts = [];
+    if (which !== "videos") parts.push(`Stories: ${stories}`);
+    if (which !== "stories") parts.push(`${made.videos} full video(s), ${made.clips} clip(s)` +
+      (made.last ? `. ${made.last.name} has ${formatTime(made.last.remainingAfter)} of footage left.` : "."));
+    const summary = "Done. " + parts.join(" ");
+    setRunStatus("ok", summary);
+    log(summary);
+    await showSourceStatus();
+    await notify(true, summary);
+  } catch (err) {
+    const msg = "STOPPED: " + (err.message || err);
+    setRunStatus("fail", msg);
+    log(msg);
     if (err.stack) log(err.stack);
+    await notify(false, (stories ? `Stories: ${stories} ` : "") + msg);
   } finally {
-    button.removeAttribute("disabled");
+    buttons.forEach((b) => b.removeAttribute("disabled"));
   }
 }
 
@@ -1114,7 +1221,9 @@ STEPS.forEach(([name, fn], n) => {
   document.getElementById("b" + n).addEventListener("click", () => step(n, name, fn));
 });
 
-document.getElementById("run").addEventListener("click", runAll);
+document.getElementById("run").addEventListener("click", () => runButton("all"));
+document.getElementById("runStories").addEventListener("click", () => runButton("stories"));
+document.getElementById("runVideos").addEventListener("click", () => runButton("videos"));
 document.getElementById("setUsed").addEventListener("click", setUsedUpTo);
 showSourceStatus();
 

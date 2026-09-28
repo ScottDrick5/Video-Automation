@@ -4,6 +4,23 @@ A **test** panel for Premiere Pro. It runs each step of the AITA workflow on its
 see which ones Premiere allows before building the real thing. It only works on a copy of a voiceover
 and never deletes anything.
 
+## Weekly use (one click)
+
+1. Open Chrome (signed in to chatgpt.com and reddit.com) and Premiere with **AITA Template.prproj**, Text panel
+   floating.
+2. In the **VidAuto** panel click **Run** and keep your hands off the mouse and Chrome (about 1-1.5 hours for a week).
+   - First it gets this week's stories (see *Stage 0* below): one voiceover and `title.txt` per missing date,
+     Monday to Sunday.
+   - Then it measures the voiceovers and checks there is enough footage for all of them; if not, it stops before
+     making any video and says so.
+   - Then it makes the full video and clips for every date folder that has a voiceover but no full video.
+   - When it finishes (or stops), your Mac shows a notification with a sound.
+3. **Get stories only** and **Make videos only** run one half, e.g. to check the voiceovers first.
+   `stories/Get Stories.command` still works on its own too.
+
+The first Run after building the helper, macOS asks whether *VidAuto Caption Helper* may control Google Chrome and
+use Downloads: click **OK/Allow**.
+
 ## Daily use
 
 1. Put each voiceover in its posting-date folder: `/Users/drick/Documents/AITA/New Video Clips/<M-D-YY>/`,

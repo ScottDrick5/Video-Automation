@@ -48,6 +48,26 @@ function chooseSource(videos, usage, needed) {
   };
 }
 
+// Before making a batch of videos: is there enough footage for all of them? needs: seconds per video, in order.
+// Walks through the source videos the same way the run will (see chooseSource), without changing `usage`.
+// Returns { ok: true }, { ok: false, error, done } (done = how many fit) or { ok: null, note } when a
+// video hasn't been measured yet so its length is unknown.
+function footageCheck(videos, usage, needs) {
+  const u = JSON.parse(JSON.stringify(usage || {}));
+  for (const [i, need] of needs.entries()) {
+    const pick = chooseSource(videos, u, need);
+    for (const s of pick.skipped || []) u[s.name] = { ...u[s.name], exhausted: true };
+    if (pick.needsMeasuring) {
+      return { ok: null, note: `${pick.name} hasn't been measured yet, so the footage can only be checked while the videos are made` };
+    }
+    if (pick.error) {
+      return { ok: false, done: i, error: `Enough footage for ${i} of ${needs.length} videos. ${pick.error}` };
+    }
+    u[pick.name] = { ...u[pick.name], usedUpTo: pick.start + need };
+  }
+  return { ok: true };
+}
+
 // Scale (percent) that makes a w x h video cover a frameW x frameH frame, centred, with no black edges.
 function fillScale(w, h, frameW = 1080, frameH = 1920) {
   return Math.ceil(Math.max(frameW / w, frameH / h) * 100 * 100 + 5) / 100; // tiny overshoot avoids a 1px edge
@@ -87,4 +107,4 @@ function formatTime(seconds) {
   return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
 }
 
-module.exports = { folderDate, foldersToDo, chooseSource, fillScale, timecodeToSeconds, videoSizeFrom, formatTime };
+module.exports = { folderDate, foldersToDo, chooseSource, footageCheck, fillScale, timecodeToSeconds, videoSizeFrom, formatTime };

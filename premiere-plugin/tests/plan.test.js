@@ -1,7 +1,7 @@
 // Run with: node --test premiere-plugin/tests/*.test.js
 const test = require("node:test");
 const assert = require("node:assert");
-const { folderDate, foldersToDo, chooseSource, fillScale, timecodeToSeconds, videoSizeFrom, formatTime } = require("../plugin/lib/plan");
+const { footageCheck, folderDate, foldersToDo, chooseSource, fillScale, timecodeToSeconds, videoSizeFrom, formatTime } = require("../plugin/lib/plan");
 
 test("folder names are read as posting dates", () => {
   assert.strictEqual(folderDate("9-25-26"), 20260925);
@@ -76,4 +76,17 @@ test("video size is read from the Video Info column", () => {
 test("long durations show hours", () => {
   assert.strictEqual(formatTime(36336), "10:05:36");
   assert.strictEqual(formatTime(605.6), "10:06");
+});
+
+test("footage check for a whole batch", () => {
+  const videos = [{ name: "a.mp4", created: 1 }, { name: "b.mp4", created: 2 }];
+  const usage = { "a.mp4": { usedUpTo: 500, duration: 1200 }, "b.mp4": { duration: 900 } };
+  // a has 700 s left: 300 + 300 fit, the third (400) moves to b (900 s)
+  assert.deepStrictEqual(footageCheck(videos, usage, [300, 300, 400]), { ok: true });
+  // 300+300 in a, 400+400 in b, the next 400 doesn't fit anywhere
+  const r = footageCheck(videos, usage, [300, 300, 400, 400, 400]);
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.done, 4);
+  assert.strictEqual(usage["a.mp4"].usedUpTo, 500, "usage is not changed");
+  assert.strictEqual(footageCheck([...videos, { name: "c.mp4", created: 3 }], usage, [300, 300, 400, 400, 400]).ok, null);
 });

@@ -16,9 +16,13 @@
     </style>
   </head>
   <body>
-    <h3>VidAuto <span class="hint">v0.5.1</span></h3>
-    <div class="hint">Makes the full video and the clips in every date folder that has a voiceover and title.txt but no full video yet. Open your AITA Template project first, and keep hands off the mouse while it runs.</div>
+    <h3>VidAuto <span class="hint">v0.6.0</span></h3>
+    <div class="hint">Run gets this week's stories in Chrome, then makes the full video and clips for every date folder with a voiceover but no full video yet. Open your AITA Template project and Chrome (signed in) first, and keep hands off the mouse while it runs.</div>
     <div class="step"><sp-button id="run">Run</sp-button><span class="status" id="runStatus"></span></div>
+    <div class="step">
+      <sp-button id="runStories" variant="secondary" style="margin-right: 8px">Get stories only</sp-button>
+      <sp-button id="runVideos" variant="secondary">Make videos only</sp-button>
+    </div>
     <div class="hint" id="sourceStatus">Source video: checking...</div>
     <div class="step">
       <input type="text" id="usedUpTo" placeholder="0:00" style="width: 110px; margin-right: 8px" />

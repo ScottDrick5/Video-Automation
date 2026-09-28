@@ -321,12 +321,47 @@ on convertVideo()
 	end try
 end convertVideo
 
+-- Stage 0: run Get Stories (stories.js, copied to /Users/Shared/VidAuto/stories by the build script) for this
+-- week's missing dates. Its progress goes to /Users/drick/Documents/AITA/vidauto-stories-log.txt.
+on getStories()
+	do shell script "mkdir -p /Users/Shared/VidAuto && : > " & quoted form of logPath
+	logLine("Getting stories")
+	try
+		set r to do shell script "cd /Users/Shared/VidAuto/stories && osascript -l JavaScript stories.js 0 /Users/Shared/VidAuto/stories 2>/dev/null | tail -1"
+		if r is "" then set r to "finished (see the stories log)"
+		logLine("RESULT: " & r)
+	on error errMsg number errNum
+		logLine("ERROR " & errNum & " getting stories: " & errMsg)
+	end try
+end getStories
+
+-- Voiceover lengths: /Users/Shared/VidAuto/durations-in.txt lists files; writes "path|seconds" lines to durations-out.txt
+on measureVoiceovers()
+	do shell script "mkdir -p /Users/Shared/VidAuto && : > " & quoted form of logPath
+	try
+		do shell script "while IFS= read -r f; do [ -n \"$f\" ] || continue; s=$(afinfo \"$f\" 2>/dev/null | awk '/estimated duration/ {print $3; exit}'); echo \"$f|$s\"; done < /Users/Shared/VidAuto/durations-in.txt > /Users/Shared/VidAuto/durations-out.txt"
+		logLine("RESULT: measured")
+	on error errMsg number errNum
+		logLine("ERROR " & errNum & " measuring voiceovers: " & errMsg)
+	end try
+end measureVoiceovers
+
+-- A Mac notification with a sound: /Users/Shared/VidAuto/notify.txt holds the sound name, then the message
+on notifyUser()
+	try
+		set lns to paragraphs of (do shell script "cat /Users/Shared/VidAuto/notify.txt")
+		display notification (item 2 of lns) with title "VidAuto" sound name (item 1 of lns)
+	end try
+end notifyUser
+
 on run
 	createCaptions()
 end run
 
 -- vidauto-helper://captions creates captions; vidauto-helper://ahole fixes A-Hole in them;
--- vidauto-helper://overlays draws the title and arrow; vidauto-helper://convert converts a source video
+-- vidauto-helper://overlays draws the title and arrow; vidauto-helper://convert converts a source video;
+-- vidauto-helper://stories gets this week's stories; vidauto-helper://durations measures voiceovers;
+-- vidauto-helper://notify shows a notification
 on open location theURL
 	if theURL starts with "vidauto-helper://ahole" then
 		my fixAHole(my wantedTerms())
@@ -334,6 +369,12 @@ on open location theURL
 		my makeOverlays()
 	else if theURL starts with "vidauto-helper://convert" then
 		my convertVideo()
+	else if theURL starts with "vidauto-helper://stories" then
+		my getStories()
+	else if theURL starts with "vidauto-helper://durations" then
+		my measureVoiceovers()
+	else if theURL starts with "vidauto-helper://notify" then
+		my notifyUser()
 	else
 		createCaptions()
 	end if
