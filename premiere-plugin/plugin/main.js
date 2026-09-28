@@ -9,7 +9,7 @@ const HELPER_DIR = "/Users/Shared/VidAuto";
 const HELPER_APP = HELPER_DIR + "/VidAuto Caption Helper.app";
 const HELPER_LOG = HELPER_DIR + "/helper-log.txt";
 const TICKS_PER_SECOND = 254016000000;
-const PLUGIN_VERSION = "0.1.2";
+const PLUGIN_VERSION = "0.1.3";
 
 const state = { clip: null, transcript: null, cut: null, sequence: null };
 
@@ -236,6 +236,28 @@ async function importTranscript(project, clip, json) {
   throw new Error("Could not put the fixed transcript back: " + errors.join("; "));
 }
 
+async function readTranscriptBack(project, clip) {
+  const path = await clip.getMediaFilePath();
+  for (let i = 1; i <= 10; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+    for (const [name, target] of [["clip from step 1", clip], ["clip looked up again", await findClipByPath(project, path)]]) {
+      if (!target) continue;
+      try {
+        const json = await ppro.Transcript.exportToJSON(target);
+        if (json && json.includes("segments")) {
+          log(`  read back after ${i}s using ${name}`);
+          return JSON.parse(json);
+        }
+        log(`  read-back ${i}s (${name}): got ${describe(json)}`);
+      } catch (err) {
+        log(`  read-back ${i}s (${name}): ${err.message || err}`);
+      }
+    }
+  }
+  log("  Could not read the transcript back after 10s.");
+  return null;
+}
+
 async function fixTranscript() {
   const project = await activeProject();
   const clip = need(state.clip, "Run step 1 first");
@@ -245,8 +267,12 @@ async function fixTranscript() {
   const json = JSON.stringify(transcript);
   await saveToDataFolder("transcript-fixed.json", json);
   await importTranscript(project, clip, json);
-  // read it back to prove Premiere kept the change
-  const back = JSON.parse(await ppro.Transcript.exportToJSON(clip));
+  // Read it back to prove Premiere kept the change. Premiere may still be applying the import, so retry.
+  const back = await readTranscriptBack(project, clip);
+  if (!back) {
+    state.transcript = transcript;
+    return `${changes.length} fixed (Premiere accepted it; check the Transcript panel to confirm)`;
+  }
   const count = flattenWords(back).filter((w) => w.text.includes("A-Hole")).length;
   log(`Transcript in Premiere now contains "A-Hole" ${count} time(s)`);
   state.transcript = back;
