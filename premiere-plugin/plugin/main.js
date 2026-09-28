@@ -19,7 +19,7 @@ const HELPER_APP = HELPER_DIR + "/VidAuto Caption Helper.app";
 const HELPER_LOG = HELPER_DIR + "/helper-log.txt";
 const TERMS_FILE = HELPER_DIR + "/terms.txt"; // words for the helper to replace (links lose "?..." parts)
 const TICKS_PER_SECOND = 254016000000;
-const PLUGIN_VERSION = "0.3.1";
+const PLUGIN_VERSION = "0.3.2";
 
 const state = { clip: null, transcript: null, cut: null, sequence: null };
 
@@ -499,41 +499,53 @@ async function measureVideo(project, vclip) {
   }
   let duration = null;
   let size = null;
+  let sawPicture = false;
   try {
     const tmp = need(await project.createSequenceFromMedia("VidAuto measuring", [vclip]), "no sequence");
-    for (let attempt = 1; attempt <= 5 && !duration; attempt++) {
+    for (let attempt = 1; attempt <= 5 && !sawPicture; attempt++) {
       await new Promise((r) => setTimeout(r, 1000));
       for (const [kind, getTrack] of [["V1", () => tmp.getVideoTrack(0)], ["A1", () => tmp.getAudioTrack(0)]]) {
         const track = await getTrack();
         const items = track ? track.getTrackItems(ppro.Constants.TrackItemType.CLIP, false) : [];
         const end = items.length ? secondsOf(await items[0].getEndTime()) : null;
         log(`  measuring (try ${attempt}): ${kind} has ${items.length} clip(s), end ${end}`);
-        if (end > 0 && !duration) duration = end;
+        if (kind === "V1" && end > 0) {
+          sawPicture = true;
+          duration = end;
+        }
+        if (kind === "A1" && end > 0 && !duration) duration = end;
       }
     }
+    // The sequence only takes the video's size if the picture actually came in.
     const fs_ = await tmp.getFrameSize();
-    if (fs_ && fs_.width > 0) size = { width: fs_.width, height: fs_.height };
+    if (sawPicture && fs_ && fs_.width > 0) size = { width: fs_.width, height: fs_.height };
     await project.deleteSequence(tmp);
   } catch (err) {
     log(`  measuring with a sequence: ${err.message || err}`);
   }
-  if (!duration || !size) {
-    try {
-      const cols = await ppro.Metadata.getProjectColumnsMetadata(vclip);
-      log(`  Project panel columns: ${String(cols).slice(0, 600)}`);
-      const text = String(cols);
-      const tc = text.match(/Media Duration[^0-9]*(\d+[:;]\d+[:;]\d+[:;]\d+)/);
-      if (!duration && tc) duration = timecodeToSeconds(tc[1]);
-      const vi = text.match(/Video Info[^0-9]*([0-9][^"]*)/);
-      if (!size && vi) size = videoSizeFrom(vi[1]);
-    } catch (err) {
-      log(`  reading the Project panel columns: ${err.message || err}`);
-    }
+  let cols = "";
+  try {
+    cols = String(await ppro.Metadata.getProjectColumnsMetadata(vclip));
+    log(`  Project panel columns: ${cols.slice(0, 800)}`);
+  } catch (err) {
+    log(`  reading the Project panel columns: ${err.message || err}`);
+  }
+  if (!size) {
+    const vi = cols.match(/Video Info[^0-9]*([0-9][^"]*)/);
+    if (vi) size = videoSizeFrom(vi[1]);
+  }
+  if (!duration) {
+    const tc = cols.match(/Media Duration[^0-9]*(\d+[:;]\d+[:;]\d+[:;]\d+)/);
+    if (tc) duration = timecodeToSeconds(tc[1]);
+  }
+  if (!sawPicture && !size) {
+    throw new Error(`Premiere only sees sound in ${vclip.name}, no picture. It's probably in a format Premiere can't read ` +
+      "(YouTube downloads are often AV1 or VP9). Download it as H.264 MP4, or convert it, and try again.");
   }
   need(duration, "Could not read the video's length (see log)");
   need(size, "Could not read the video's size (see log)");
   log(`  measured ${vclip.name}: ${formatTime(duration)}, ${size.width}x${size.height}`);
-  return { duration, width: size.width, height: size.height };
+  return { duration, width: size.width, height: size.height, measured: 2 };
 }
 
 // Take the source video's own sound off the timeline (A2), so it's silent and can't end up in the
@@ -584,6 +596,11 @@ async function setScale(project, item, percent) {
 async function addVideo(project, seq, needed, usage) {
   const videos = await sourceVideos();
   if (!videos.length) throw new Error(`No videos in ${SOURCE_DIR}`);
+  // measurements from before 0.3.2 could be wrong (sound-only), so measure those again
+  for (const v of videos) {
+    const u = usage[v.name];
+    if (u && u.duration !== undefined && u.measured !== 2) delete u.duration;
+  }
   let pick = chooseSource(videos, usage, needed);
   while (pick.needsMeasuring) {
     const v = videos.find((x) => x.name === pick.name);
@@ -606,9 +623,7 @@ async function addVideo(project, seq, needed, usage) {
   transaction(project, "VidAuto: video in/out", () => [
     vclip.createSetInOutPointsAction(ppro.TickTime.createWithSeconds(pick.start), ppro.TickTime.createWithSeconds(pick.start + needed)),
   ]);
-  const editor = ppro.SequenceEditor.getEditor(seq);
-  // video on V1, its own sound on A2 (the voiceover stays on A1)
-  transaction(project, "VidAuto: add video", () => [editor.createOverwriteItemAction(vclip, ppro.TickTime.TIME_ZERO, 0, 1)]);
+  await placeOnV1(project, seq, vclip);
 
   const vItems = (await seq.getVideoTrack(0)).getTrackItems(ppro.Constants.TrackItemType.CLIP, false);
   const vItem = need(vItems[0], "The video did not land on V1");
@@ -620,6 +635,30 @@ async function addVideo(project, seq, needed, usage) {
   await setScale(project, vItem, scale);
   log(`  scaled to ${scale}% to fill the frame`);
   return { name: v.name, start: pick.start, end: pick.start + needed, remainingAfter: pick.remainingAfter };
+}
+
+// Video on V1, its own sound on A2 (the voiceover stays on A1). Adobe's sample passes a plain
+// ProjectItem, and Premiere 26.0.2 rejected a ClipProjectItem, so try the forms it may accept.
+async function placeOnV1(project, seq, vclip) {
+  const editor = ppro.SequenceEditor.getEditor(seq);
+  const asProjectItem = ppro.ProjectItem.cast(vclip);
+  const zero = ppro.TickTime.TIME_ZERO;
+  const ways = [
+    ["overwrite (project item)", () => editor.createOverwriteItemAction(asProjectItem, zero, 0, 1)],
+    ["overwrite (clip)", () => editor.createOverwriteItemAction(vclip, zero, 0, 1)],
+    ["insert (project item)", () => editor.createInsertProjectItemAction(asProjectItem, zero, 0, 1, true)],
+  ];
+  for (const [name, make] of ways) {
+    try {
+      transaction(project, "VidAuto: add video", () => [make()]);
+      const items = (await seq.getVideoTrack(0)).getTrackItems(ppro.Constants.TrackItemType.CLIP, false);
+      log(`  ${name}: worked, V1 has ${items.length} clip(s)`);
+      if (items.length) return;
+    } catch (err) {
+      log(`  ${name}: ${err.message || err}`);
+    }
+  }
+  throw new Error("Could not put the video on V1 (see log)");
 }
 
 async function makeVideo(project, folderPath, voiceoverName, usage) {
