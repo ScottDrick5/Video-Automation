@@ -34,13 +34,15 @@ const STORIES_LOG = AITA_DIR + "/vidauto-stories-log.txt"; // Get Stories' progr
 const DURATIONS_IN = HELPER_DIR + "/durations-in.txt"; // voiceovers to measure
 const DURATIONS_OUT = HELPER_DIR + "/durations-out.txt";
 const NOTIFY_FILE = HELPER_DIR + "/notify.txt";
+const STORIES_COUNT = HELPER_DIR + "/stories-count.txt"; // how many stories (0 = the rest of the week)
+const STORIES_USED = AITA_DIR + "/vidauto-stories.json"; // stories made so far (with their date folders)
 const TITLE_FILE = "title.txt"; // story title, in each date folder (until Stage 0 writes it)
 const TITLE_TRACK = 1; // V2
 const ARROW_TRACK = 2; // V3
 const ARROW_SECONDS = 5;
 const CLIP_ARROW_AT = 5; // seconds into each clip
 const TICKS_PER_SECOND = 254016000000;
-const PLUGIN_VERSION = "0.6.0";
+const PLUGIN_VERSION = "0.6.1";
 
 const state = { clip: null, transcript: null, cut: null, sequence: null };
 
@@ -1033,7 +1035,16 @@ async function notify(ok, message) {
 }
 
 // Stage 0: the helper runs Get Stories (this week's missing dates). Its progress is copied into this log.
-async function getStories() {
+async function storyFolders() {
+  try {
+    return JSON.parse((await readTextFile(STORIES_USED)) || '{"stories":[]}').stories.map((x) => x.folder);
+  } catch (e) {
+    return [];
+  }
+}
+
+async function getStories(count = 0) {
+  await writeTextFile(STORIES_COUNT, `${count}\n`);
   let seen = ((await readTextFile(STORIES_LOG)) || "").length;
   const copyNewLines = async () => {
     const text = (await readTextFile(STORIES_LOG)) || "";
@@ -1098,11 +1109,13 @@ async function checkFootage(todo) {
 }
 
 // Stages 1-2 for every date folder with a voiceover and no full video. Returns { videos, clips, last } .
-async function makeVideos(project, withFootageCheck) {
+async function makeVideos(project, withFootageCheck, onlyFolders = null, limit = 0) {
   for (const [path, what] of [[CLIPS_DIR, "date folders"], [SOURCE_DIR, "source videos"], [EXPORT_PRESET, "export preset"]]) {
     if (!(await exists(path))) throw new Error(`Can't find the ${what}: ${path}`);
   }
-  const todo = foldersToDo(await dateFolders());
+  let todo = foldersToDo(await dateFolders());
+  if (onlyFolders && onlyFolders.length) todo = todo.filter((f) => onlyFolders.includes(f.name));
+  if (limit) todo = todo.slice(0, limit);
   if (!todo.length) {
     log("Nothing to do: every date folder with a voiceover already has its full video");
     return { videos: 0, clips: 0, last: null };
@@ -1126,7 +1139,9 @@ async function makeVideos(project, withFootageCheck) {
 async function runButton(which) {
   const buttons = ["run", "runStories", "runVideos"].map((id) => document.getElementById(id));
   buttons.forEach((b) => b.setAttribute("disabled", ""));
-  log(`=== ${which === "all" ? "Run (stories, then videos)" : which === "stories" ? "Get stories only" : "Make videos only"}`);
+  const testOne = document.getElementById("testOne").checked;
+  log(`=== ${which === "all" ? "Run (stories, then videos)" : which === "stories" ? "Get stories only" : "Make videos only"}` +
+    (testOne ? " - TEST: one only" : ""));
   let stories = "";
   try {
     let project = null;
@@ -1134,9 +1149,15 @@ async function runButton(which) {
       project = await activeProject();
       log(`Project: ${project.name}`);
     }
-    if (which !== "videos") stories = await getStories();
+    const before = await storyFolders();
+    if (which !== "videos") stories = await getStories(testOne ? 1 : 0);
+    // in a test Run, make the video for the story just made (if there is one)
+    const fresh = (await storyFolders()).filter((f) => !before.includes(f));
+    if (which === "all" && testOne) {
+      log(fresh.length ? `  test: making the video for ${fresh[0]}` : "  test: no new story was made; making the oldest waiting video instead");
+    }
     let made = { videos: 0, clips: 0, last: null };
-    if (which !== "stories") made = await makeVideos(project, true);
+    if (which !== "stories") made = await makeVideos(project, true, which === "all" && testOne ? fresh : null, testOne ? 1 : 0);
     const parts = [];
     if (which !== "videos") parts.push(`Stories: ${stories}`);
     if (which !== "stories") parts.push(`${made.videos} full video(s), ${made.clips} clip(s)` +

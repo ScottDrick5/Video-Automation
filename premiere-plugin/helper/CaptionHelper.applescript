@@ -327,7 +327,12 @@ on getStories()
 	do shell script "mkdir -p /Users/Shared/VidAuto && : > " & quoted form of logPath
 	logLine("Getting stories")
 	try
-		set r to do shell script "cd /Users/Shared/VidAuto/stories && osascript -l JavaScript stories.js 0 /Users/Shared/VidAuto/stories 2>/dev/null | tail -1"
+		set n to "0"
+		try
+			set n to do shell script "tr -cd 0-9 < /Users/Shared/VidAuto/stories-count.txt"
+		end try
+		if n is "" then set n to "0"
+		set r to do shell script "cd /Users/Shared/VidAuto/stories && osascript -l JavaScript stories.js " & n & " /Users/Shared/VidAuto/stories 2>/dev/null | tail -1"
 		if r is "" then set r to "finished (see the stories log)"
 		logLine("RESULT: " & r)
 	on error errMsg number errNum
