@@ -9,7 +9,7 @@ const HELPER_DIR = "/Users/Shared/VidAuto";
 const HELPER_APP = HELPER_DIR + "/VidAuto Caption Helper.app";
 const HELPER_LOG = HELPER_DIR + "/helper-log.txt";
 const TICKS_PER_SECOND = 254016000000;
-const PLUGIN_VERSION = "0.1.5";
+const PLUGIN_VERSION = "0.1.6";
 
 const state = { clip: null, transcript: null, cut: null, sequence: null };
 
