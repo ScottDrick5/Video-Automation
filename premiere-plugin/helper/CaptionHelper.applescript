@@ -145,11 +145,16 @@ on clickPanel(pt, wx, wy, fw, fromRight)
 	return r
 end clickPanel
 
--- Replace ahole / a-hole / asshole with A-Hole using Find and Replace in the Captions tab of the
--- floating Text panel. Expects the "Replace with" row to be closed when it starts, and closes it again.
-on fixAHole()
+-- Replace the given spellings (e.g. {"ahole", "asshole"}) with A-Hole using Find and Replace in the
+-- Captions tab of the floating Text panel. Premiere closes the "Replace with" row after every
+-- Replace all, so each word gets a full round: search, open the row, type A-Hole, Replace all.
+-- Only words that are really in the captions should be passed: a search with no results would
+-- leave the row open.
+on fixAHole(terms)
 	do shell script "mkdir -p /Users/Shared/VidAuto && : > " & quoted form of logPath
-	logLine("A-Hole fix started")
+	set AppleScript's text item delimiters to ", "
+	logLine("A-Hole fix started for: " & (terms as text))
+	set AppleScript's text item delimiters to ""
 	try
 		try
 			set lns to paragraphs of (do shell script "cat " & quoted form of panelFile)
@@ -175,8 +180,7 @@ on fixAHole()
 		set {wx, wy, fw, fh} to my numbersIn(found)
 		logLine("Text panel found at " & found)
 
-		set isFirst to true
-		repeat with t in {"ahole", "a-hole", "asshole"}
+		repeat with t in terms
 			my clickPanel(searchPt, wx, wy, fw, false)
 			delay 0.3
 			tell application "System Events"
@@ -184,36 +188,29 @@ on fixAHole()
 				keystroke (t as text)
 			end tell
 			delay 1.2
-			if isFirst then
-				-- open the Replace row and type the replacement once; it stays for the other words
-				my logLine("Clicking Replace (opens the Replace with row)")
-				my clickPanel(togglePt, wx, wy, fw, false)
-				delay 0.7
-				my clickPanel(fieldPt, wx, wy, fw, false)
-				delay 0.3
-				tell application "System Events"
-					keystroke "a" using command down
-					keystroke "A-Hole"
-				end tell
-				delay 0.4
-				set isFirst to false
-			end if
+			my logLine("Searched '" & t & "'; opening Replace")
+			my clickPanel(togglePt, wx, wy, fw, false)
+			delay 0.7
+			my clickPanel(fieldPt, wx, wy, fw, false)
+			delay 0.3
+			tell application "System Events"
+				keystroke "a" using command down
+				keystroke "A-Hole"
+			end tell
+			delay 0.4
 			my clickPanel(allPt, wx, wy, fw, true)
-			logLine("Searched '" & t & "' and clicked Replace all")
-			delay 1
+			my logLine("Clicked Replace all for '" & t & "'")
+			delay 1.2
 		end repeat
 
-		-- Tidy up: close the Replace row while the search still has text (the button hides when it's empty),
-		-- then clear the search.
-		my clickPanel(togglePt, wx, wy, fw, false)
-		delay 0.5
+		-- Clear the search box (the Replace row has already closed itself)
 		my clickPanel(searchPt, wx, wy, fw, false)
 		delay 0.3
 		tell application "System Events"
 			keystroke "a" using command down
 			key code 51 -- delete
 		end tell
-		logLine("RESULT: replaced ahole, a-hole and asshole with A-Hole")
+		logLine("RESULT: replaced with A-Hole")
 	on error errMsg number errNum
 		if errNum is -1719 or errNum is -25211 or errNum is -1743 or errNum is 1002 then
 			logLine("ERROR: Mac permission missing (" & errNum & "). Allow 'VidAuto Caption Helper' in System Settings > Privacy & Security > Accessibility, then try again.")
@@ -223,14 +220,25 @@ on fixAHole()
 	end try
 end fixAHole
 
+-- "vidauto-helper://ahole?terms=ahole,asshole" -> {"ahole", "asshole"} (all three if none given)
+on termsFromURL(theURL)
+	if theURL does not contain "terms=" then return {"ahole", "a-hole", "asshole"}
+	set AppleScript's text item delimiters to "terms="
+	set termPart to text item 2 of theURL
+	set AppleScript's text item delimiters to ","
+	set out to text items of termPart
+	set AppleScript's text item delimiters to ""
+	return out
+end termsFromURL
+
 on run
 	createCaptions()
 end run
 
 -- vidauto-helper://captions creates captions; vidauto-helper://ahole fixes A-Hole in them
 on open location theURL
-	if theURL contains "ahole" then
-		fixAHole()
+	if theURL starts with "vidauto-helper://ahole" then
+		my fixAHole(my termsFromURL(theURL))
 	else
 		createCaptions()
 	end if

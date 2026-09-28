@@ -1,7 +1,7 @@
 // Run with: node --test premiere-plugin/tests
 const test = require("node:test");
 const assert = require("node:assert");
-const { findCutPoint, fixAHole, flattenWords } = require("../plugin/lib/transcript");
+const { findCutPoint, fixAHole, flattenWords, aholeTerms } = require("../plugin/lib/transcript");
 
 function transcriptFrom(...segments) {
   let t = 0;
@@ -60,4 +60,10 @@ test("merges 'a hole' into one word", () => {
 
 test("leaves an already-correct A-Hole alone", () => {
   assert.strictEqual(fixAHole(transcriptFrom("Am I the A-Hole here?")).changes.length, 0);
+});
+
+test("aholeTerms lists only the spellings that occur", () => {
+  assert.deepStrictEqual(aholeTerms(transcriptFrom("Am I the ahole? He is an asshole.")), ["ahole", "asshole"]);
+  assert.deepStrictEqual(aholeTerms(transcriptFrom("Am I the A-hole here?")), ["a-hole"]);
+  assert.deepStrictEqual(aholeTerms(transcriptFrom("They dug a hole.")), []);
 });

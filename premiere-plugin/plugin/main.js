@@ -3,13 +3,13 @@
 const ppro = require("premierepro");
 const uxp = require("uxp");
 const fs = uxp.storage.localFileSystem;
-const { findCutPoint, flattenWords } = require("./lib/transcript.js");
+const { findCutPoint, flattenWords, aholeTerms } = require("./lib/transcript.js");
 
 const HELPER_DIR = "/Users/Shared/VidAuto";
 const HELPER_APP = HELPER_DIR + "/VidAuto Caption Helper.app";
 const HELPER_LOG = HELPER_DIR + "/helper-log.txt";
 const TICKS_PER_SECOND = 254016000000;
-const PLUGIN_VERSION = "0.2.0";
+const PLUGIN_VERSION = "0.2.1";
 
 const state = { clip: null, transcript: null, cut: null, sequence: null };
 
@@ -328,6 +328,7 @@ async function buildSequence() {
 // Start the helper through its link (vidauto-helper://<task>). For captions, opening the app also works.
 async function startHelper(task) {
   const ways = [[`link vidauto-helper://${task}`, () => uxp.shell.openExternal(`vidauto-helper://${task}`, "Start the VidAuto helper")]];
+  task = task.split("?")[0];
   if (task === "captions") {
     ways.push(["opening the app", () => uxp.shell.openPath(HELPER_APP, "Open the VidAuto helper so it can press Create captions for you")]);
   }
@@ -377,8 +378,12 @@ async function createCaptions() {
 
 async function fixCaptionWords() {
   await activeProject();
-  log("Asking the helper to replace ahole / a-hole / asshole with A-Hole in the Captions tab...");
-  await startHelper("ahole");
+  const terms = aholeTerms(need(state.transcript, "Run step 2 first"));
+  if (!terms.length) return "nothing to fix";
+  // Only search spellings that are really there: "Replace all" closes the Replace row, but a search with
+  // no results would leave it open and throw off the next word.
+  log(`Asking the helper to replace ${terms.join(", ")} with A-Hole in the Captions tab...`);
+  await startHelper("ahole?terms=" + terms.join(","));
   const helperLog = await waitForHelper(90);
   log("Helper log:\n" + helperLog);
   if (/ERROR/.test(helperLog) || !/RESULT: replaced/.test(helperLog)) throw new Error("The helper did not finish the replacements (see log)");

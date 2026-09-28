@@ -81,4 +81,16 @@ function fixAHole(transcript) {
   return { transcript: copy, changes };
 }
 
-module.exports = { norm, flattenWords, findCutPoint, fixAHole };
+// Which of the spellings the helper replaces in the captions actually occur, in that order.
+// ("a hole" as two words is left out on purpose: it also appears in normal phrases like "dug a hole".)
+const CAPTION_TERMS = ["ahole", "a-hole", "asshole"];
+function aholeTerms(transcript) {
+  const present = new Set();
+  for (const w of flattenWords(transcript)) {
+    const t = String(w.text).toLowerCase().replace(/[^a-z-]/g, "");
+    for (const term of CAPTION_TERMS) if (t.includes(term)) present.add(term);
+  }
+  return CAPTION_TERMS.filter((t) => present.has(t));
+}
+
+module.exports = { norm, flattenWords, findCutPoint, fixAHole, aholeTerms };
