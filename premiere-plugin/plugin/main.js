@@ -9,7 +9,7 @@ const HELPER_DIR = "/Users/Shared/VidAuto";
 const HELPER_APP = HELPER_DIR + "/VidAuto Caption Helper.app";
 const HELPER_LOG = HELPER_DIR + "/helper-log.txt";
 const TICKS_PER_SECOND = 254016000000;
-const PLUGIN_VERSION = "0.1.1";
+const PLUGIN_VERSION = "0.1.2";
 
 const state = { clip: null, transcript: null, cut: null, sequence: null };
 
@@ -55,11 +55,18 @@ function need(value, message) {
 
 function transaction(project, name, buildActions) {
   let ok = false;
+  let inner = null; // an error thrown inside Premiere's callbacks may not reach us otherwise
   project.lockedAccess(() => {
     ok = project.executeTransaction((compound) => {
-      for (const action of buildActions()) compound.addAction(action);
+      try {
+        for (const action of buildActions()) compound.addAction(action);
+      } catch (err) {
+        inner = err;
+        throw err;
+      }
     }, name);
   });
+  if (inner) throw inner;
   if (!ok) throw new Error(`Premiere refused the "${name}" change`);
 }
 
@@ -199,23 +206,31 @@ async function importTranscript(project, clip, json) {
       setTimeout(() => settled || reject(new Error("callback never called")), 5000);
     })],
   ];
+  // The clip object from step 1 may be stale, so also try one looked up again by its file path.
+  const freshClip = await findClipByPath(project, await clip.getMediaFilePath());
+  const clips = [["clip from step 1", clip], ["clip looked up again", freshClip]].filter(([, c]) => c);
   const errors = [];
   for (const [name, make] of attempts) {
-    let part = "making TextSegments";
+    let segments;
     try {
-      const segments = await make();
+      segments = await make();
       log(`  ${name} gave ${describe(segments)}`);
       if (!segments || typeof segments !== "object") throw new Error(`got ${describe(segments)}`);
-      part = "creating the import action";
-      const action = ppro.Transcript.createImportTextSegmentsAction(segments, clip);
-      log(`  import action is ${describe(action)}`);
-      part = "running the change";
-      transaction(project, "VidAuto: fix A-Hole", () => [action]);
-      log(`  ${name}: worked`);
-      return;
     } catch (err) {
-      log(`  ${name}: failed while ${part}: ${err.message || err}`);
-      errors.push(`${name} (${part})`);
+      log(`  ${name}: failed while making TextSegments: ${err.message || err}`);
+      errors.push(`${name} (making TextSegments)`);
+      continue;
+    }
+    for (const [clipName, target] of clips) {
+      try {
+        // Like Adobe's sample, create the action inside the locked transaction.
+        transaction(project, "VidAuto: fix A-Hole", () => [ppro.Transcript.createImportTextSegmentsAction(segments, target)]);
+        log(`  ${name} + ${clipName}: worked`);
+        return;
+      } catch (err) {
+        log(`  ${name} + ${clipName}: failed: ${err.message || err}`);
+        errors.push(`${name} + ${clipName}`);
+      }
     }
   }
   throw new Error("Could not put the fixed transcript back: " + errors.join("; "));
