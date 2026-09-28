@@ -148,6 +148,22 @@ function nextFreeDates(start, taken, count) {
   return out;
 }
 
+// This week's batch: from the next date without a folder through that week's Sunday (weeks run Monday to
+// Sunday), skipping dates that already have a folder. If a whole week is missing, that's 7 dates.
+function weekBatch(start, taken) {
+  const have = new Set([...taken].map(sameDateKey));
+  const d = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  for (let i = 0; i < 400 && have.has(sameDateKey(folderName(d))); i++) d.setDate(d.getDate() + 1);
+  const out = [];
+  const daysToSunday = (7 - d.getDay()) % 7; // getDay: Sunday 0, Monday 1 ... Saturday 6
+  for (let i = 0; i <= daysToSunday; i++) {
+    const name = folderName(d);
+    if (!have.has(sameDateKey(name))) out.push(name);
+    d.setDate(d.getDate() + 1);
+  }
+  return out;
+}
+
 // A voiceover download from the AI Voice Saver extension: chatgpt-<voice>-<date>.<ext>
 function isVoiceoverFile(name) {
   return /^chatgpt-[a-z]+-.*\.(aac|mp3|wav|m4a|opus|ogg)$/i.test(name);
@@ -166,6 +182,6 @@ function isLimitMessage(text) {
 if (typeof module !== "undefined") {
   module.exports = {
     SKIP_WARNINGS, MIN_WORDS, MAX_WORDS, cleanPostText, wordCount, contentWarnings, skipReason, pickStories,
-    perspectiveOf, cleanTitle, favoriteTitle, folderName, nextFreeDates, isVoiceoverFile, voiceOfFile, isLimitMessage,
+    perspectiveOf, cleanTitle, favoriteTitle, folderName, nextFreeDates, weekBatch, isVoiceoverFile, voiceOfFile, isLimitMessage,
   };
 }

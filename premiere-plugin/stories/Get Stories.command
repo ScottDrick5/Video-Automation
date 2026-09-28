@@ -6,8 +6,9 @@
 cd "$(dirname "$0")"
 echo "VidAuto - Get Stories"
 echo
-read -r -p "How many stories? (press Enter for 7) " N
-N=${N:-7}
+echo "Press Enter to make this week's missing stories (Monday to Sunday),"
+read -r -p "or type a number to make that many: " N
+N=${N:-0}
 echo
 echo "Working... keep your hands off Chrome. Progress shows below and in"
 echo "/Users/drick/Documents/AITA/vidauto-stories-log.txt"

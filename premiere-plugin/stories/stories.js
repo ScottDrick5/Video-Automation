@@ -419,7 +419,7 @@ function makeStory(post, folder, prompt) {
 // ------------------------------------------------------------------ main
 
 function run(argv) {
-  const count = Math.max(1, Number(argv[0]) || 7);
+  const asked = Number(argv[0]) || 0; // 0 = this week's missing dates (Monday to Sunday)
   const here = argv[1] || ".";
   R = eval(`(function () { var module = { exports: {} }; ${readText(here + "/story-rules.js")}
     return module.exports; })()`);
@@ -429,7 +429,8 @@ function run(argv) {
   const usedData = JSON.parse(readText(USED_FILE) || '{"stories":[]}');
   const used = new Set(usedData.stories.map((s) => s.id));
   const taken = new Set(ObjC.deepUnwrap($.NSFileManager.defaultManager.contentsOfDirectoryAtPathError(CLIPS_DIR, null)) || []);
-  const dates = R.nextFreeDates(new Date(), taken, count);
+  const dates = asked ? R.nextFreeDates(new Date(), taken, asked) : R.weekBatch(new Date(), taken);
+  const count = dates.length;
 
   log(`=== Getting ${count} stor${count === 1 ? "y" : "ies"} for ${dates.join(", ")}`);
   let posts;

@@ -37,7 +37,9 @@ The panel shows the current source video and how much is left. To start the next
 
 ## Stage 0: Get stories (testing, separate for now)
 
-Double-click `premiere-plugin/stories/Get Stories.command` and type how many stories (Enter = 7). For each one it:
+Double-click `premiere-plugin/stories/Get Stories.command` and press Enter. It makes a story for every date from
+the next date without a folder through that week's Sunday (weeks run Monday to Sunday), so a fresh week gets 7 and
+a half-done week gets the rest. (Type a number instead to make exactly that many.) For each one it:
 1. picks the most upvoted post of the week on r/BestofRedditorUpdates that isn't NSFW, wasn't used before, has
    no violent content warnings and is long enough for a 4-8 minute video (only the main post's text is used),
 2. opens a new ChatGPT chat in Chrome and sends your prompt with the story,
