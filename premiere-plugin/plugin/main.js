@@ -158,7 +158,7 @@ async function exists(path) {
 async function clearHelperLog() {
   try {
     const entry = await fs.getEntryWithUrl("file:" + HELPER_LOG);
-    await entry.write("\n") // UXP refuses to write an empty string;
+    await entry.write("\n"); // UXP refuses to write an empty string
   } catch (e) {
     // no log yet; the helper creates it
   }
