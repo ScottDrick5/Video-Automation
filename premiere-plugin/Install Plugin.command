@@ -33,6 +33,9 @@ UPIA="/Library/Application Support/Adobe/Adobe Desktop Common/RemoteComponents/U
         echo "Installed from $PKG"
         break
       fi
+      if echo "$OUT" | grep -q -- "-631"; then
+        echo "(-631 usually means the Creative Cloud app isn't open or you're not signed in to it.)"
+      fi
       echo "NOT installed from $PKG"
       echo
     done
