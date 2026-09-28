@@ -18,13 +18,16 @@ UPIA="/Library/Application Support/Adobe/Adobe Desktop Common/RemoteComponents/U
   else
     for PKG in "dist/VidAutoTest.ccx" "dist/VidAutoTest-folder.ccx"; do
       echo "=== Trying $PKG"
-      "$UPIA" --install "$(pwd)/$PKG"
+      # The installer can print "Failed" and still exit with 0, so judge by its output.
+      OUT="$("$UPIA" --install "$(pwd)/$PKG" 2>&1)"
       STATUS=$?
+      echo "$OUT"
       echo "exit code: $STATUS"
-      if [ $STATUS -eq 0 ]; then
+      if [ $STATUS -eq 0 ] && ! echo "$OUT" | grep -qi "fail"; then
         echo "Installed from $PKG"
         break
       fi
+      echo "NOT installed from $PKG"
       echo
     done
     echo
