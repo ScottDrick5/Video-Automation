@@ -35,6 +35,7 @@ end markOf
 property winTool : "/Users/Shared/VidAuto/windows.js"
 property buttonFile : "/Users/Shared/VidAuto/create-button.txt"
 property panelFile : "/Users/Shared/VidAuto/text-panel.txt"
+property presetFile : "/Users/Shared/VidAuto/preset-spots.txt"
 
 -- Run a command of windows.js (finds Premiere windows by size, clicks the mouse)
 on winCmd(args)
@@ -116,9 +117,33 @@ on createCaptions()
 			return
 		end if
 		set {wx, wy, fw, fh} to my numbersIn(found)
+		logLine("Found it at " & found)
+
+		-- Pick the AITA caption preset (Premiere doesn't keep it selected): click the Caption preset menu,
+		-- then AITA in its list, at the spots recorded by "Record Preset Positions.command".
+		try
+			set lns to paragraphs of (do shell script "cat " & quoted form of presetFile)
+			set menuPt to my numbersIn(item 1 of lns)
+			set itemPt to my numbersIn(item 2 of lns)
+			delay 0.5
+			logLine("Opening the Caption preset menu: " & my winCmd("click " & (wx + (item 1 of menuPt)) & " " & (wy + (item 2 of menuPt))))
+			delay 0.8
+			logLine("Choosing AITA: " & my winCmd("click " & (wx + (item 1 of itemPt)) & " " & (wy + (item 2 of itemPt))))
+			delay 1
+			-- the window may change size with the preset; look for it again
+			set again to my winCmd("find " & ww & " " & wh & " 2")
+			if again is not "none" then
+				set {wx, wy, fw, fh} to my numbersIn(again)
+			else
+				logLine("Window size changed after choosing the preset; using its old position")
+			end if
+		on error errMsg
+			logLine("Couldn't pick the AITA preset (" & errMsg & "); creating captions with whatever preset is showing. If you haven't yet, run 'Record Preset Positions.command'.")
+		end try
+
 		set cx to wx + fw - dx
 		set cy to wy + fh - dy
-		logLine("Found it at " & found & "; clicking Create captions at " & cx & "," & cy)
+		logLine("Clicking Create captions at " & cx & "," & cy)
 		delay 0.5
 		logLine("RESULT: " & my winCmd("click " & cx & " " & cy))
 	on error errMsg number errNum

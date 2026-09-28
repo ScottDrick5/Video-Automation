@@ -6,6 +6,8 @@
 //   find <w> <h> <timeoutSec>   -> wait for a Premiere window of about that size, print "x,y,w,h" or "none"
 //   point                       -> for the Premiere window under the mouse, print "left,top,right,w,h"
 //                                  (pointer distance from the window's left, top and right edges, and its size)
+//   rel <w> <h>                 -> pointer distance from the top-left of the Premiere window of about that
+//                                  size, "dx,dy" (for spots inside a window whose menus open as separate windows)
 //   click <x> <y>               -> click the left mouse button there and put the pointer back
 
 ObjC.import("CoreGraphics");
@@ -58,6 +60,13 @@ function find(w, h, timeout) {
   return "none";
 }
 
+function rel(w, h) {
+  const win = premiereWindows().find((x) => Math.abs(x.w - w) <= 12 && Math.abs(x.h - h) <= 12);
+  if (!win) return `error: no Premiere window of about ${w}x${h} is open`;
+  const m = mouse();
+  return [m.x - win.x, m.y - win.y].map(Math.round).join(",");
+}
+
 function click(x, y) {
   const back = $.CGEventGetLocation($.CGEventCreate(null));
   const pt = $.CGPointMake(x, y);
@@ -79,6 +88,7 @@ function run(argv) {
   if (cmd === "record") return record();
   if (cmd === "point") return point();
   if (cmd === "find") return find(Number(a), Number(b), Number(c || 8));
+  if (cmd === "rel") return rel(Number(a), Number(b));
   if (cmd === "click") return click(Number(a), Number(b));
-  return "usage: record | point | find <w> <h> <timeout> | click <x> <y>";
+  return "usage: record | point | rel <w> <h> | find <w> <h> <timeout> | click <x> <y>";
 }

@@ -114,6 +114,15 @@ Text panel as its own window so it can find it on any screen.
 
 Run it again if you resize the floating Text panel.
 
+### 5e. Record where the AITA caption preset is (once)
+Premiere doesn't keep the AITA preset selected, so the helper picks it in the Create captions window.
+1. Open the Create captions window (click the Text panel, then Control + Option + Command + C).
+2. Double-click `premiere-plugin/helper/Record Preset Positions.command`.
+3. Point at the **Caption preset** menu when asked; then click it open and point at **AITA** in the list.
+4. Press Escape and click Cancel.
+
+Run it again if you add or remove caption presets.
+
 ### 6. Save your export preset as a file
 In Premiere's **Export** page, click **•••** next to *Preset* → **Save preset**, and name it `AITA`.
 Step 7 needs the preset as an `.epr` file. Open the preset manager (Preset → **More presets**), select `AITA`,
