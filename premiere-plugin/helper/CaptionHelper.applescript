@@ -32,36 +32,25 @@ on markOf(menuItem)
 	end try
 end markOf
 
--- Position of the Create captions button saved by "Record Button Position.command", or missing value
-on savedButtonPosition()
-	try
-		set t to do shell script "cat /Users/Shared/VidAuto/create-button.txt"
-		set AppleScript's text item delimiters to ","
-		set parts to text items of t
-		set AppleScript's text item delimiters to ""
-		return {(item 1 of parts) as integer, (item 2 of parts) as integer}
-	on error
-		set AppleScript's text item delimiters to ""
-		return missing value
-	end try
-end savedButtonPosition
+property winTool : "/Users/Shared/VidAuto/windows.js"
+property buttonFile : "/Users/Shared/VidAuto/create-button.txt"
 
--- Click the left mouse button at screen position {x, y}, then put the pointer back where it was.
--- Event numbers: tap 0 = HID, 5 = mouse moved, 1 = left down, 2 = left up, button 0 = left.
-on clickAt(pos)
-	set js to "ObjC.import('CoreGraphics');" & ¬
-		"var back = $.CGEventGetLocation($.CGEventCreate(null));" & ¬
-		"var pt = $.CGPointMake(" & (item 1 of pos) & "," & (item 2 of pos) & ");" & ¬
-		"function post(type, where) { $.CGEventPost(0, $.CGEventCreateMouseEvent(null, type, where, 0)); }" & ¬
-		"post(5, pt); delay(0.15); post(1, pt); delay(0.08); post(2, pt); delay(0.15); post(5, back); 'mouse events'"
-	try
-		return do shell script "osascript -l JavaScript -e " & quoted form of js
-	on error errMsg
-		my logLine("Mouse events failed (" & errMsg & "); trying System Events click")
-		tell application "System Events" to click at pos
-		return "System Events click"
-	end try
-end clickAt
+-- Run a command of windows.js (finds Premiere windows by size, clicks the mouse)
+on winCmd(args)
+	return do shell script "osascript -l JavaScript " & quoted form of winTool & " " & args
+end winCmd
+
+-- Split "a,b,c" into a list of integers
+on numbersIn(t)
+	set AppleScript's text item delimiters to ","
+	set parts to text items of t
+	set AppleScript's text item delimiters to ""
+	set out to {}
+	repeat with p in parts
+		set end of out to (p as integer)
+	end repeat
+	return out
+end numbersIn
 
 on logWindows(p)
 	tell application "System Events"
@@ -108,49 +97,29 @@ on createCaptions()
 			delay 2
 		end tell
 
-		-- 3. Confirm the Create captions window. Wait up to 5s in case it can be found by name;
-		--    otherwise click the button at the recorded position.
-		set dlg to missing value
-		repeat 10 times
-			tell application "System Events"
-				repeat with w in (windows of p)
-					set wn to name of w
-					if wn is not missing value and wn contains "aption" then set dlg to w
-				end repeat
-			end tell
-			if dlg is not missing value then exit repeat
-			delay 0.5
-		end repeat
-		my logWindows(p)
-		tell application "System Events"
-			if dlg is not missing value then
-				set bnames to {}
-				try
-					repeat with b in (buttons of dlg)
-						set end of bnames to (name of b as text)
-					end repeat
-				end try
-				set AppleScript's text item delimiters to ", "
-				my logLine("Found captions window '" & (name of dlg) & "', buttons: " & (bnames as text))
-				set AppleScript's text item delimiters to ""
-				try
-					click (first button of dlg whose name contains "Create")
-					my logLine("RESULT: clicked the Create captions button.")
-					return
-				end try
-			end if
-		end tell
-
-		-- Premiere doesn't show its windows to helpers and opens this one without making it active,
-		-- so click the button at the position recorded with "Record Button Position.command".
-		set pos to my savedButtonPosition()
-		if pos is missing value then
-			logLine("RESULT: no saved button position. Open the Create captions window and run 'Record Button Position.command', then try again.")
+		-- 3. Click Create captions. Premiere hides its windows from helpers and opens this one without
+		--    making it active, so find it by size (macOS still reports window bounds) and click the
+		--    button at the spot recorded by "Record Button Position.command", measured from the
+		--    window's bottom-right corner. This works on any screen.
+		try
+			set rec to my numbersIn(do shell script "cat " & quoted form of buttonFile)
+		on error
+			logLine("RESULT: button position not recorded yet. Open the Create captions window and run 'Record Button Position.command'.")
+			return
+		end try
+		set {dx, dy, ww, wh} to rec
+		logLine("Waiting for a Premiere window of about " & ww & "x" & wh)
+		set found to my winCmd("find " & ww & " " & wh & " 8")
+		if found is "none" then
+			logLine("RESULT: the Create captions window did not appear within 8s (or its size changed; record the button position again).")
 			return
 		end if
-		logLine("Clicking the Create captions button at " & (item 1 of pos) & "," & (item 2 of pos))
-		set r to my clickAt(pos)
-		logLine("RESULT: clicked (" & r & "). If captions did not appear, record the button position again.")
+		set {wx, wy, fw, fh} to my numbersIn(found)
+		set cx to wx + fw - dx
+		set cy to wy + fh - dy
+		logLine("Found it at " & found & "; clicking Create captions at " & cx & "," & cy)
+		delay 0.5
+		logLine("RESULT: " & my winCmd("click " & cx & " " & cy))
 	on error errMsg number errNum
 		if errNum is -1719 or errNum is -25211 or errNum is -1743 or errNum is 1002 then
 			logLine("ERROR: Mac permission missing (" & errNum & "). Allow 'VidAuto Caption Helper' in System Settings > Privacy & Security > Accessibility (and Automation), then try again.")

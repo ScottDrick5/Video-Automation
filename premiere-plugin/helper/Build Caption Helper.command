@@ -25,6 +25,9 @@ fi
 codesign --force --deep --sign - "$APP"
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$APP"
 
+# Window finder / mouse clicker used by the helper and by Record Button Position.command
+cp windows.js /Users/Shared/VidAuto/windows.js
+
 echo "Built: $APP"
 echo
 echo "IMPORTANT: macOS treats this as a new app. In System Settings > Privacy & Security > Accessibility,"

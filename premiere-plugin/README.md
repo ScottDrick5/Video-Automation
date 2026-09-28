@@ -67,15 +67,17 @@ search **caption**, and under **Text Panel → Create Captions** click the Short
 After rebuilding the helper, macOS treats it as a new app: in **System Settings → Privacy & Security →
 Accessibility**, remove the old *VidAuto Caption Helper* entry (select it, click **−**) and allow the new one.
 
-### 5c. Record where the Create captions button is
-Premiere opens the Create captions window without making it active, so the helper clicks its button
-at a recorded screen position.
-1. In Premiere, open the Create captions window (Control + Option + Command + C with the Text panel active).
-2. Double-click `premiere-plugin/helper/Record Button Position.command`.
-3. Within 5 seconds, rest the mouse pointer on the blue **Create captions** button and keep it still.
-4. When it says *Saved*, press **Cancel** in Premiere.
+### 5c. Record where the Create captions button is (once)
+Premiere opens the Create captions window without making it active and hides it from helpers, so the helper
+finds that window by its size and clicks the button inside it. The spot is measured from the window's corner,
+so it works on any screen, with one monitor or three.
+1. Build the helper first (step 5).
+2. In Premiere, open the Create captions window (click the Text panel, then Control + Option + Command + C).
+3. Double-click `premiere-plugin/helper/Record Button Position.command`.
+4. Within 5 seconds, rest the mouse pointer on the blue **Create captions** button and keep it still.
+5. When it says *Saved*, press **Cancel** in Premiere.
 
-Do this again if you move or resize Premiere's window, or change monitors.
+Record again only if Premiere changes the size of that window (for example after an update).
 
 ### 6. Save your export preset as a file
 In Premiere's **Export** page, click **•••** next to *Preset* → **Save preset**, and name it `AITA`.
