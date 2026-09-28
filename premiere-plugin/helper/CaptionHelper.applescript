@@ -110,8 +110,8 @@ on createCaptions()
 			else
 				my logLine("Captions window not recognised by name (see windows above); pressing Return.")
 			end if
-			set frontmost of p to true
-			delay 0.3
+			-- Don't bring Premiere to the front here: that makes the main window active instead of the
+			-- Create captions window, and Return then goes to the wrong place.
 			key code 36 -- Return
 			my logLine("RESULT: pressed Return to confirm.")
 		end tell
