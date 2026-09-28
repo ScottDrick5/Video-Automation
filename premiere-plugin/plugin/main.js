@@ -19,7 +19,7 @@ const HELPER_APP = HELPER_DIR + "/VidAuto Caption Helper.app";
 const HELPER_LOG = HELPER_DIR + "/helper-log.txt";
 const TERMS_FILE = HELPER_DIR + "/terms.txt"; // words for the helper to replace (links lose "?..." parts)
 const TICKS_PER_SECOND = 254016000000;
-const PLUGIN_VERSION = "0.3.2";
+const PLUGIN_VERSION = "0.3.3";
 
 const state = { clip: null, transcript: null, cut: null, sequence: null };
 
@@ -55,7 +55,29 @@ async function step(n, name, fn) {
 }
 
 function secondsOf(tickTime) {
-  return tickTime ? Math.round(tickTime.seconds * 1000) / 1000 : null;
+  if (!tickTime) return null;
+  // Work from the raw tick count when there is one: for very long media (a 10-hour video is ~9e15
+  // ticks) the ready-made "seconds" value came out 60x too small.
+  try {
+    if (tickTime.ticks !== undefined && typeof BigInt === "function") {
+      const t = BigInt(String(tickTime.ticks));
+      const whole = t / BigInt(TICKS_PER_SECOND);
+      const rest = t % BigInt(TICKS_PER_SECOND);
+      return Math.round((Number(whole) + Number(rest) / TICKS_PER_SECOND) * 1000) / 1000;
+    }
+  } catch (e) {
+    // fall back to the seconds value
+  }
+  return Math.round(tickTime.seconds * 1000) / 1000;
+}
+
+// TickTime for a number of seconds, built from an exact tick count (safe for hours-long videos).
+function tickTimeAt(seconds) {
+  if (typeof BigInt === "function") {
+    const ticks = BigInt(Math.round(seconds * 1000)) * BigInt(TICKS_PER_SECOND / 1000);
+    return ppro.TickTime.createWithTicks(ticks.toString());
+  }
+  return ppro.TickTime.createWithSeconds(seconds);
 }
 
 function need(value, message) {
@@ -507,8 +529,10 @@ async function measureVideo(project, vclip) {
       for (const [kind, getTrack] of [["V1", () => tmp.getVideoTrack(0)], ["A1", () => tmp.getAudioTrack(0)]]) {
         const track = await getTrack();
         const items = track ? track.getTrackItems(ppro.Constants.TrackItemType.CLIP, false) : [];
-        const end = items.length ? secondsOf(await items[0].getEndTime()) : null;
-        log(`  measuring (try ${attempt}): ${kind} has ${items.length} clip(s), end ${end}`);
+        const endTime = items.length ? await items[0].getEndTime() : null;
+        const end = secondsOf(endTime);
+        log(`  measuring (try ${attempt}): ${kind} has ${items.length} clip(s), end ${end}s` +
+          (endTime ? ` (ticks ${endTime.ticks}, seconds value ${endTime.seconds})` : ""));
         if (kind === "V1" && end > 0) {
           sawPicture = true;
           duration = end;
@@ -525,7 +549,7 @@ async function measureVideo(project, vclip) {
   }
   let cols = "";
   try {
-    cols = String(await ppro.Metadata.getProjectColumnsMetadata(vclip));
+    cols = String(await ppro.Metadata.getProjectColumnsMetadata(ppro.ProjectItem.cast(vclip)));
     log(`  Project panel columns: ${cols.slice(0, 800)}`);
   } catch (err) {
     log(`  reading the Project panel columns: ${err.message || err}`);
@@ -534,9 +558,12 @@ async function measureVideo(project, vclip) {
     const vi = cols.match(/Video Info[^0-9]*([0-9][^"]*)/);
     if (vi) size = videoSizeFrom(vi[1]);
   }
-  if (!duration) {
-    const tc = cols.match(/Media Duration[^0-9]*(\d+[:;]\d+[:;]\d+[:;]\d+)/);
-    if (tc) duration = timecodeToSeconds(tc[1]);
+  const tc = cols.match(/Media Duration[^0-9]*(\d+[:;]\d+[:;]\d+[:;]\d+)/);
+  const columnDuration = tc ? timecodeToSeconds(tc[1]) : null;
+  if (columnDuration) log(`  Media Duration column: ${tc[1]} (${formatTime(columnDuration)})`);
+  if (columnDuration && (!duration || Math.abs(columnDuration - duration) / columnDuration > 0.02)) {
+    if (duration) log(`  WARNING: sequence said ${formatTime(duration)}, column says ${formatTime(columnDuration)}; using the column`);
+    duration = columnDuration;
   }
   if (!sawPicture && !size) {
     throw new Error(`Premiere only sees sound in ${vclip.name}, no picture. It's probably in a format Premiere can't read ` +
@@ -545,7 +572,7 @@ async function measureVideo(project, vclip) {
   need(duration, "Could not read the video's length (see log)");
   need(size, "Could not read the video's size (see log)");
   log(`  measured ${vclip.name}: ${formatTime(duration)}, ${size.width}x${size.height}`);
-  return { duration, width: size.width, height: size.height, measured: 2 };
+  return { duration, width: size.width, height: size.height, measured: 3 };
 }
 
 // Take the source video's own sound off the timeline (A2), so it's silent and can't end up in the
@@ -596,10 +623,13 @@ async function setScale(project, item, percent) {
 async function addVideo(project, seq, needed, usage) {
   const videos = await sourceVideos();
   if (!videos.length) throw new Error(`No videos in ${SOURCE_DIR}`);
-  // measurements from before 0.3.2 could be wrong (sound-only), so measure those again
+  // measurements from before 0.3.3 could be wrong (sound-only, or 60x too short), so measure again
   for (const v of videos) {
     const u = usage[v.name];
-    if (u && u.duration !== undefined && u.measured !== 2) delete u.duration;
+    if (u && u.duration !== undefined && u.measured !== 3) {
+      delete u.duration;
+      delete u.exhausted;
+    }
   }
   let pick = chooseSource(videos, usage, needed);
   while (pick.needsMeasuring) {
@@ -621,7 +651,7 @@ async function addVideo(project, seq, needed, usage) {
   const info = usage[v.name];
   log(`  video: ${v.name} from ${formatTime(pick.start)} to ${formatTime(pick.start + needed)}`);
   transaction(project, "VidAuto: video in/out", () => [
-    vclip.createSetInOutPointsAction(ppro.TickTime.createWithSeconds(pick.start), ppro.TickTime.createWithSeconds(pick.start + needed)),
+    vclip.createSetInOutPointsAction(tickTimeAt(pick.start), tickTimeAt(pick.start + needed)),
   ]);
   await placeOnV1(project, seq, vclip);
 

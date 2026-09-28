@@ -70,3 +70,8 @@ test("video size is read from the Video Info column", () => {
   assert.deepStrictEqual(videoSizeFrom("3840 x 2160 (1.0)"), { width: 3840, height: 2160 });
   assert.strictEqual(videoSizeFrom("Stereo"), null);
 });
+
+test("long durations show hours", () => {
+  assert.strictEqual(formatTime(36336), "10:05:36");
+  assert.strictEqual(formatTime(605.6), "10:06");
+});
