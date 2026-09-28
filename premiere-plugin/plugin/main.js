@@ -32,7 +32,7 @@ const ARROW_TRACK = 2; // V3
 const ARROW_SECONDS = 5;
 const CLIP_ARROW_AT = 5; // seconds into each clip
 const TICKS_PER_SECOND = 254016000000;
-const PLUGIN_VERSION = "0.4.0";
+const PLUGIN_VERSION = "0.4.1";
 
 const state = { clip: null, transcript: null, cut: null, sequence: null };
 
@@ -245,6 +245,12 @@ async function getTranscript(clip, maxSeconds = 600) {
         await ppro.Transcript.transcribeClipProjectItem(clip);
       } catch (err) {
         log(`  transcribe request: ${err.message || err}`);
+        log(`  (this Premiere's transcript commands: ${Object.keys(ppro.Transcript || {}).join(", ") || "none"})`);
+        const msg = "WAITING: Premiere hasn't transcribed the voiceover. In the Text panel's Transcript tab, select the " +
+          "voiceover in the Project panel and click Transcribe; the run continues by itself once it's done.";
+        log(msg);
+        const status = document.getElementById("runStatus");
+        if (status) status.textContent = msg;
       }
     }
     await new Promise((r) => setTimeout(r, 3000));
