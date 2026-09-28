@@ -116,7 +116,7 @@ on createCaptions()
 			my logLine("RESULT: pressed Return to confirm.")
 		end tell
 	on error errMsg number errNum
-		if errNum is -1719 or errNum is -25211 or errNum is -1743 then
+		if errNum is -1719 or errNum is -25211 or errNum is -1743 or errNum is 1002 then
 			logLine("ERROR: Mac permission missing (" & errNum & "). Allow 'VidAuto Caption Helper' in System Settings > Privacy & Security > Accessibility (and Automation), then try again.")
 		else
 			logLine("ERROR " & errNum & ": " & errMsg)
