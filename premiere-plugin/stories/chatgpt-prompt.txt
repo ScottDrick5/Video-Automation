@@ -1,0 +1,33 @@
+Can you make this Reddit post into a readable Facebook reel in an "Am I the A-Hole" style?
+
+## Hook (do this first, before anything else)
+Before writing the full script, generate 3 alternate opening hook lines, each built from a different shocking, emotionally loaded, or curiosity-driving detail pulled directly from the story (a quote, an action, or a consequence). Each hook must:
+- Be under 12 words
+- Contain no names, dates, or explanatory context
+- Create an open question in the viewer's mind that the story will answer
+
+Do not begin with scene-setting, relationship context, backstory, or logistics (who the people are, where they were, why they were there). Save all of that for after the hook.
+
+After listing the 3 hook options, pick the strongest one and use it as the opening line of the script, After start the story with the Am I the A-Hole question.
+
+Include a section in the story to invite viewers to comment below.
+
+I also need to know before all the other information if the story is from a male or female prospective.
+
+## Script rules
+- Remove any cussing
+- Redact any commenters' names with "Commenter"
+- Include any updates from the post, prefacing each with "Update" and noting how many days later the update happened (if stated in the post)
+- Include a break point in the video for a CTA saying something like "Make sure you follow for more videos posted daily"
+- Include any relevant comments from the post that enhance the story
+- Remove subreddit names and date markings
+- Title should use normal punctuation (no all caps); do not include the original title after the punctuation rewrite
+- Target length: 4 to 8 minutes when read aloud
+- End the story with: "So tell me, am I the A-hole?"
+
+## Output format
+- Put the 3 hook options at the top, clearly labeled
+- Put the full script in an editable writing block
+- Do not include any suggestions or notes after the script
+- Do not label the title card 
+- Spell out the opening AITA as Am I the A-Hole

@@ -35,6 +35,27 @@ The panel shows the current source video and how much is left. To start the next
 (for example after cutting a video by hand), type the timecode, e.g. `00;07;45;01`, and click
 **Set start of next video**. Progress is kept in `/Users/drick/Documents/AITA/vidauto-usage.json`.
 
+## Stage 0: Get stories (testing, separate for now)
+
+Double-click `premiere-plugin/stories/Get Stories.command` and type how many stories (Enter = 7). For each one it:
+1. picks the most upvoted post of the week on r/BestofRedditorUpdates that isn't NSFW, wasn't used before, has
+   no violent content warnings and is long enough for a 4-8 minute video (only the main post's text is used),
+2. opens a new ChatGPT chat in Chrome and sends your prompt with the story,
+3. reads "Perspective: Male/Female" and picks the voice: Ember (male) or Juniper (female),
+4. asks "Can you give me a good, few-word title for this script?", then asks ChatGPT which one is best,
+5. switches AI Voice Saver's voice if needed (and reloads the page), clicks its download button and waits for the
+   file in Downloads,
+6. moves the voiceover into the next date folder that doesn't exist yet (creating it) and writes `title.txt`.
+
+Used stories are listed in `/Users/drick/Documents/AITA/vidauto-stories.json` so none is used twice; the full log is
+in `vidauto-stories-log.txt` next to it. To change the prompt, put your version in
+`/Users/drick/Documents/AITA/chatgpt-prompt.txt`. If ChatGPT's message limit is reached, it stops and says how many
+stories it finished.
+
+Before the first run: in Chrome turn on **View → Developer → Allow JavaScript from Apple Events**, and be signed in
+to chatgpt.com and reddit.com. The first time, macOS asks whether Terminal may control Google Chrome and access
+Downloads: click **OK/Allow**.
+
 ## Test steps (troubleshooting)
 
 | Button | What it checks |
