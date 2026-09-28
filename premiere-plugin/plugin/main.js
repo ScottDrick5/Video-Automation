@@ -9,7 +9,7 @@ const HELPER_DIR = "/Users/Shared/VidAuto";
 const HELPER_APP = HELPER_DIR + "/VidAuto Caption Helper.app";
 const HELPER_LOG = HELPER_DIR + "/helper-log.txt";
 const TICKS_PER_SECOND = 254016000000;
-const PLUGIN_VERSION = "0.1.4";
+const PLUGIN_VERSION = "0.1.5";
 
 const state = { clip: null, transcript: null, cut: null, sequence: null };
 
@@ -415,8 +415,26 @@ async function createCaptions() {
   const seq = need((await project.getActiveSequence()) || state.sequence, "Open the test sequence first");
   const before = await seq.getCaptionTrackCount();
   log(`Caption tracks before: ${before}`);
-  const result = await uxp.shell.openPath(HELPER_APP, "Open the VidAuto helper so it can press Create captions for you");
-  if (result !== "") throw new Error(`Could not open the helper: ${result}`);
+  // Start the helper through its link first; opening the .app file directly failed on Premiere 26.0.2.
+  let started = false;
+  const ways = [
+    ["link vidauto-helper://captions", () => uxp.shell.openExternal("vidauto-helper://captions", "Start the VidAuto helper so it can press Create captions for you")],
+    ["opening the app", () => uxp.shell.openPath(HELPER_APP, "Open the VidAuto helper so it can press Create captions for you")],
+  ];
+  for (const [wayName, start] of ways) {
+    try {
+      const result = await start();
+      if (result === "") {
+        log(`  started helper with ${wayName}`);
+        started = true;
+        break;
+      }
+      log(`  ${wayName}: ${result}`);
+    } catch (err) {
+      log(`  ${wayName}: ${err.message || err}`);
+    }
+  }
+  if (!started) throw new Error("Could not start the helper (see log)");
   log("Helper opened, waiting up to 90s for captions...");
   let after = before;
   for (let i = 0; i < 90 && after <= before; i++) {

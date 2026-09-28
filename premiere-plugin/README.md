@@ -59,6 +59,14 @@ Double-click `premiere-plugin/helper/Build Caption Helper.command`.
 
 It creates `VidAuto Caption Helper` in `/Users/Shared/VidAuto`.
 
+### 5b. Give Create Captions a keyboard shortcut
+The helper creates captions by pressing a shortcut. In Premiere, open **Premiere Pro → Keyboard Shortcuts**,
+search **caption**, and under **Text Panel → Create Captions** click the Shortcut space and press
+**Control + Option + Command + C**. Click **OK**.
+
+After rebuilding the helper, macOS treats it as a new app: in **System Settings → Privacy & Security →
+Accessibility**, remove the old *VidAuto Caption Helper* entry (select it, click **−**) and allow the new one.
+
 ### 6. Save your export preset as a file
 In Premiere's **Export** page, click **•••** next to *Preset* → **Save preset**, and name it `AITA`.
 Step 7 needs the preset as an `.epr` file. Open the preset manager (Preset → **More presets**), select `AITA`,

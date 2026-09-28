@@ -1,7 +1,7 @@
 {
   "id": "com.vidauto.aita.test",
   "name": "VidAuto Test",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "main": "index.html",
   "host": {
     "app": "premierepro",
@@ -12,6 +12,9 @@
     "localFileSystem": "fullAccess",
     "clipboard": "readAndWrite",
     "launchProcess": {
+      "schemes": [
+        "vidauto-helper"
+      ],
       "extensions": [
         ".app"
       ]
