@@ -15,6 +15,10 @@ const SOURCE_DIR = AITA_DIR + "/Source Video";
 const UPLOADS_FILE = AITA_DIR + "/vidauto-uploads.json"; // what has been scheduled, so nothing is posted twice
 const LOG_FILE = AITA_DIR + "/vidauto-uploads-log.txt";
 const YT_CHANNEL = "UCI3S3qXsupSQFBb4Qe2szpg";
+const LIMITS_FILE = AITA_DIR + "/vidauto-upload-limits.json"; // e.g. { "youtube": 15 }: most uploads per day
+const DEFAULT_DAILY_LIMIT = { youtube: 10, tiktok: 10, facebook: 10 };
+
+class AfterFilePicked extends Error {} // failed after the file was chosen: that upload already counts
 
 let U = null; // upload-rules.js
 const chrome = Application("Google Chrome");
@@ -248,13 +252,18 @@ function pickFile(path) {
 
 // ------------------------------------------------------------------ YouTube
 
-function youtube(item) {
+// review = true: fill in everything, then stop before the final "Schedule" click and leave the tab open
+// for you to check and click it yourself.
+function youtube(item, review) {
   const path = `${CLIPS_DIR}/${item.folder}/${item.file}`;
   const id = openTab(`https://studio.youtube.com/channel/${YT_CHANNEL}/videos/upload?d=ud`);
+  let picked = false;
+  let keepOpen = false;
   try {
     waitFor(id, ["#select-files-button", "text:Select files"], 60, 'YouTube Studio\'s "Select files" button');
     realClick(id, ["#select-files-button", "text:Select files"], 'the "Select files" button');
     pickFile(path);
+    picked = true;
     waitFor(id, ["#title-textarea #textbox", "#title-textarea [contenteditable]"], 90, "The video details page");
     delay(2);
     log(`  uploading; title: ${setText(id, ["#title-textarea #textbox", "#title-textarea [contenteditable]"], item.title, "the title box")}`);
@@ -296,14 +305,27 @@ function youtube(item) {
       delay(5);
     }
     log(`  upload status: ${status || "(not shown)"}`);
+    if (review) {
+      keepOpen = true;
+      log("  TEST: everything is filled in. Check the title, description, date and time in the open YouTube tab,");
+      log('  then click "Schedule" yourself (or fix anything first).');
+      return;
+    }
     jsClick(id, ["#done-button"], 'the "Schedule" button');
     delay(4);
     const after = js(id, "document.body.innerText.slice(0, 3000)");
     if (!/scheduled|video published|video saved/i.test(after)) log("  (couldn't confirm the \"Video scheduled\" message; check YouTube Studio)");
     log(`  scheduled on YouTube for ${day} ${time}`);
     delay(3);
+  } catch (e) {
+    if (picked) {
+      // the video is already on YouTube (counts toward the daily limit): leave it open to finish by hand
+      keepOpen = true;
+      throw new AfterFilePicked(`${e.message}\n    The video is already uploading in the open YouTube tab: finish its details and schedule it by hand there.`);
+    }
+    throw e;
   } finally {
-    closeTab(id);
+    if (!keepOpen) closeTab(id);
   }
 }
 
@@ -334,7 +356,8 @@ function creditFor(folder) {
 function run(argv) {
   const platform = (argv[0] || "youtube").toLowerCase();
   const limit = Number(argv[1]) || 0;
-  const here = argv[2] || ".";
+  const review = argv.length > 3 && argv[2] === "review"; // test: stop before the final click
+  const here = argv[argv.length - 1] || ".";
   U = eval(`(function () { var module = { exports: {} }; ${readText(here + "/upload-rules.js")}
     return module.exports; })()`);
   if (platform !== "youtube") return `Uploading to ${platform} isn't built yet.`;
@@ -350,7 +373,16 @@ function run(argv) {
   for (const f of folders) f.credit = creditFor(f.name);
 
   const plan = U.uploadPlan(platform, folders, uploaded, new Date());
-  const items = limit ? plan.items.slice(0, limit) : plan.items;
+  let items = limit ? plan.items.slice(0, limit) : plan.items;
+  // never go over the daily upload limit (counting what was already uploaded today)
+  const limits = Object.assign({}, DEFAULT_DAILY_LIMIT, JSON.parse(readText(LIMITS_FILE) || "{}"));
+  const today = new Date().toDateString();
+  const doneToday = record.uploads.filter((x) => x.key.startsWith(platform + "|") && new Date(x.at).toDateString() === today).length;
+  const room = Math.max(0, limits[platform] - doneToday);
+  if (items.length > room) {
+    log(`  daily limit: ${limits[platform]} a day, ${doneToday} already today, so ${room} now; the other ${items.length - room} wait for the next run`);
+    items = items.slice(0, room);
+  }
   log(`=== Upload to ${platform}: ${items.length} video(s) to schedule`);
   folders.forEach((f) => log(`  ${f.name}: gameplay credit "${f.credit || "?"}"`));
   plan.skipped.forEach((s) => log(`  skipped: ${s}`));
@@ -358,12 +390,21 @@ function run(argv) {
   let done = 0;
   for (const item of items) {
     log(`${item.file} -> ${U.studioDate(item.when)} ${U.studioTime(item.when)}`);
-    try {
-      youtube(item);
-      record.uploads.push({ key: item.key, when: new Date(item.when).toISOString(), at: new Date().toISOString() });
+    const remember = (note) => {
+      record.uploads.push({ key: item.key, when: new Date(item.when).toISOString(), at: new Date().toISOString(), ...(note ? { note } : {}) });
       writeText(UPLOADS_FILE, JSON.stringify(record, null, 2));
+    };
+    try {
+      youtube(item, review);
+      remember(review ? "test: you click Schedule" : "");
       done++;
+      if (review) {
+        log("=== TEST done: waiting for you to click Schedule in the open YouTube tab.");
+        return "Test: everything is filled in on YouTube; check it and click Schedule in the open tab.";
+      }
     } catch (e) {
+      // an upload that already started is remembered, so it's never uploaded a second time
+      if (e instanceof AfterFilePicked) remember("failed partway: finish by hand");
       log(`  FAILED: ${e.message}`);
       log("STOPPED so nothing gets posted twice or at the wrong time. Check YouTube Studio, then run again.");
       return `Stopped after ${done} of ${items.length}: ${e.message.split("\n")[0]}`;

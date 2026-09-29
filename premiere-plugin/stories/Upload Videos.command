@@ -7,13 +7,13 @@
 cd "$(dirname "$0")"
 echo "VidAuto - Upload Videos (YouTube)"
 echo
-read -r -p "Test with just one video? (y = one, Enter = all) " T
-N=0
-[[ "$T" =~ ^[Yy] ]] && N=1
+read -r -p "Test with just one video? (y = one, filled in but you click Schedule; Enter = all) " T
+ARGS="youtube 0"
+[[ "$T" =~ ^[Yy] ]] && ARGS="youtube 1 review"
 echo
 echo "Working... hands off the mouse and keyboard. Progress shows below and in"
 echo "/Users/drick/Documents/AITA/vidauto-uploads-log.txt"
 echo
-osascript -l JavaScript uploads.js youtube "$N" "$(pwd)"
+osascript -l JavaScript uploads.js $ARGS "$(pwd)"
 echo
 read -n 1 -s -r -p "Press any key to close."

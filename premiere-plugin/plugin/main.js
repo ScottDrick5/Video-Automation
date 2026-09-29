@@ -44,7 +44,7 @@ const ARROW_TRACK = 2; // V3
 const ARROW_SECONDS = 5;
 const CLIP_ARROW_AT = 5; // seconds into each clip
 const TICKS_PER_SECOND = 254016000000;
-const PLUGIN_VERSION = "0.7.0";
+const PLUGIN_VERSION = "0.7.1";
 
 const state = { clip: null, transcript: null, cut: null, sequence: null };
 
@@ -1143,7 +1143,8 @@ async function uploadVideos(testOne) {
   };
   log("--- Scheduling uploads (Chrome; hands off the mouse and keyboard)");
   setRunStatus("", "scheduling uploads... hands off the mouse and keyboard");
-  await writeTextFile(UPLOADS_ARGS, `youtube ${testOne ? 1 : 0}\n`);
+  // test: one video, filled in but not scheduled, so you can check it and click Schedule yourself
+  await writeTextFile(UPLOADS_ARGS, testOne ? "youtube 1 review\n" : "youtube 0\n");
   await startHelper("uploads");
   const t0 = Date.now();
   let helperLog = "";

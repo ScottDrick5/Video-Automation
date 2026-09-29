@@ -71,7 +71,15 @@ video in `source.txt`. What's been scheduled is kept in `/Users/drick/Documents/
 nothing is posted twice; the log is `vidauto-uploads-log.txt`.
 
 It drives YouTube Studio in Chrome and types the file's location into the Mac's file window, so leave the mouse
-and keyboard alone while it runs. Tick **Test: just one** to schedule a single video.
+and keyboard alone while it runs.
+
+Protecting your daily upload limit:
+- **Test: just one** uploads one video and fills everything in, but doesn't click the final **Schedule**: the tab
+  stays open for you to check and click it yourself.
+- If something fails after the file was chosen (so the upload already counts), the tab is left open to finish by
+  hand, that video is remembered so it's never uploaded twice, and the run stops.
+- It never uploads more than your daily limit (counting today's earlier uploads). Default 10 a day; to change it,
+  create `/Users/drick/Documents/AITA/vidauto-upload-limits.json` with e.g. `{ "youtube": 15 }`.
 
 ## Stage 0: Get stories (testing, separate for now)
 
