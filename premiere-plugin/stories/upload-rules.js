@@ -74,7 +74,8 @@ function uploadPlan(platform, folders, uploaded, now) {
         continue;
       }
       if (!f.credit) {
-        skipped.push(`${f.name}: no gameplay credit found`);
+        const msg = `${f.name}: no gameplay credit found`;
+        if (!skipped.includes(msg)) skipped.push(msg);
         continue;
       }
       items.push({ key, folder: f.name, file, title: v.title, credit: f.credit, description: description(v.title, f.credit, platform), when: when.getTime() });

@@ -64,8 +64,10 @@ after "Gameplay Video Credit:" is changed. On TikTok and Facebook the text is th
 
     #storytime #redditstoryteller #RelationshipDrama #reddit
 
-The creator comes from the source video's "Authors" info ("Orbital - No Copyright Gameplay" -> "Orbital"); to set it
-yourself, put `<source video name>.credit.txt` next to that video in Source Video. Each date folder notes its source
+The creator comes from the credit you set in the panel for the current source video (type the name next to
+**Gameplay credit** and click **Set**; it's saved as `<source video name>.credit.txt` in Source Video), or else
+from the video file's "Authors" info ("Orbital - No Copyright Gameplay" -> "Orbital"). Converted or renamed files
+often have no Authors info, so set it in the panel whenever you start a new source video. Each date folder notes its source
 video in `source.txt`. What's been scheduled is kept in `/Users/drick/Documents/AITA/vidauto-uploads.json`, so
 nothing is posted twice; the log is `vidauto-uploads-log.txt`.
 

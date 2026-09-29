@@ -350,13 +350,16 @@ function creditFor(folder) {
     if (!newest) return null;
     source = `${SOURCE_DIR}/${newest.n}`;
   }
+  const name = source.split("/").pop();
   const own = readText(source.replace(/\.[^./]+$/, "") + ".credit.txt");
-  if (own && own.trim()) return own.trim();
+  if (own && own.trim()) return { credit: own.trim(), source: name, how: "set in the panel" };
   try {
-    return U.creditFromAuthor(sh(`mdls -raw -name kMDItemAuthors ${q(source)}`).replace(/\s+/g, " "));
+    const c = U.creditFromAuthor(sh(`mdls -raw -name kMDItemAuthors ${q(source)}`).replace(/\s+/g, " "));
+    if (c) return { credit: c, source: name, how: "from the video's file info" };
   } catch (e) {
-    return null;
+    // no Spotlight info
   }
+  return { credit: null, source: name, how: "no creator in its file info" };
 }
 
 // ------------------------------------------------------------------ main
@@ -378,7 +381,13 @@ function run(argv) {
     .filter((f) => f.files.some((x) => /^vidauto-done\.txt$/i.test(x)) ||
       (f.files.some((x) => /\(full video\)\.mp4$/i.test(x)) && f.files.some((x) => /\(part 1\)\.mp4$/i.test(x))))
     .filter((f) => U.folderDay(f.name) >= new Date(new Date().setHours(0, 0, 0, 0)));
-  for (const f of folders) f.credit = creditFor(f.name);
+  const missing = new Set();
+  for (const f of folders) {
+    const c = creditFor(f.name);
+    f.credit = c ? c.credit : null;
+    f.creditNote = c ? `${c.source}, ${c.how}` : "no source video found";
+    if (!f.credit && c) missing.add(c.source);
+  }
 
   const plan = U.uploadPlan(platform, folders, uploaded, new Date());
   let items = limit ? plan.items.slice(0, limit) : plan.items;
@@ -392,7 +401,8 @@ function run(argv) {
     items = items.slice(0, room);
   }
   log(`=== Upload to ${platform}: ${items.length} video(s) to schedule`);
-  folders.forEach((f) => log(`  ${f.name}: gameplay credit "${f.credit || "?"}"`));
+  folders.forEach((f) => log(`  ${f.name}: gameplay credit "${f.credit || "?"}" (${f.creditNote})`));
+  missing.forEach((m) => log(`  NO CREDIT for ${m}: in the VidAuto panel type the creator's name next to "Gameplay credit" and click Set, then run Upload again.`));
   plan.skipped.forEach((s) => log(`  skipped: ${s}`));
 
   let done = 0;

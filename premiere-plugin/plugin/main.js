@@ -44,7 +44,7 @@ const ARROW_TRACK = 2; // V3
 const ARROW_SECONDS = 5;
 const CLIP_ARROW_AT = 5; // seconds into each clip
 const TICKS_PER_SECOND = 254016000000;
-const PLUGIN_VERSION = "0.7.1";
+const PLUGIN_VERSION = "0.7.2";
 
 const state = { clip: null, transcript: null, cut: null, sequence: null };
 
@@ -1291,11 +1291,33 @@ async function showSourceStatus() {
     }
     const u = usage[current.name] || {};
     const left = u.duration !== undefined ? ` (${formatTime(u.duration - (u.usedUpTo || 0))} left)` : "";
-    el.textContent = `Source video: ${current.name}, used up to ${formatTime(u.usedUpTo || 0)}${left}`;
+    const credit = ((await readTextFile(creditFile(current.name))) || "").trim();
+    el.textContent = `Source video: ${current.name}, used up to ${formatTime(u.usedUpTo || 0)}${left}. ` +
+      `Gameplay credit: ${credit || "not set (read from the video's info if it has one)"}`;
     state.currentSource = current.name;
   } catch (err) {
     el.textContent = `Source video: can't read ${SOURCE_DIR} (${err.message || err})`;
   }
+}
+
+// The gameplay creator's name for a source video, used in upload descriptions
+function creditFile(videoName) {
+  return `${SOURCE_DIR}/${videoName.replace(/\.[^.]+$/, "")}.credit.txt`;
+}
+
+async function setCredit() {
+  const name = document.getElementById("creditBox").value.trim();
+  if (!state.currentSource) {
+    log(`Couldn't set the credit: no source video found in ${SOURCE_DIR}`);
+    return;
+  }
+  if (!name) {
+    log("Type the gameplay creator's name first (e.g. Orbital)");
+    return;
+  }
+  await writeTextFile(creditFile(state.currentSource), name + "\n");
+  log(`${state.currentSource}: gameplay credit set to "${name}"`);
+  await showSourceStatus();
 }
 
 async function setUsedUpTo() {
@@ -1340,6 +1362,7 @@ document.getElementById("runStories").addEventListener("click", () => runButton(
 document.getElementById("runVideos").addEventListener("click", () => runButton("videos"));
 document.getElementById("runUploads").addEventListener("click", () => runButton("uploads"));
 document.getElementById("setUsed").addEventListener("click", setUsedUpTo);
+document.getElementById("setCredit").addEventListener("click", setCredit);
 showSourceStatus();
 
 document.getElementById("copy").addEventListener("click", async () => {

@@ -16,7 +16,7 @@
     </style>
   </head>
   <body>
-    <h3>VidAuto <span class="hint">v0.7.1</span></h3>
+    <h3>VidAuto <span class="hint">v0.7.2</span></h3>
     <div class="hint">Run gets this week's stories in Chrome, then makes the full video and clips for every date folder with a voiceover but no full video yet. Open your AITA Template project and Chrome (signed in) first, and keep hands off the mouse while it runs.</div>
     <div class="step"><sp-button id="run">Run</sp-button><span class="status" id="runStatus"></span></div>
     <div class="step">
@@ -36,6 +36,10 @@
     <div class="step">
       <input type="text" id="usedUpTo" placeholder="0:00" style="width: 110px; margin-right: 8px" />
       <sp-button id="setUsed" variant="secondary">Set start of next video</sp-button>
+    </div>
+    <div class="step">
+      <input type="text" id="creditBox" placeholder="Gameplay credit, e.g. Orbital" style="width: 180px; margin-right: 8px" />
+      <sp-button id="setCredit" variant="secondary">Set</sp-button>
     </div>
 
     <h3 style="margin-top: 18px">Test steps <span class="hint">(troubleshooting only)</span></h3>
