@@ -31,7 +31,7 @@ cp windows.js /Users/Shared/VidAuto/windows.js
 cp overlays.js /Users/Shared/VidAuto/overlays.js
 # Get Stories (Stage 0), run by the panel's Run and "Get stories only" buttons
 mkdir -p /Users/Shared/VidAuto/stories
-cp ../stories/stories.js ../stories/story-rules.js ../stories/chatgpt-prompt.txt /Users/Shared/VidAuto/stories/
+cp ../stories/stories.js ../stories/story-rules.js ../stories/chatgpt-prompt.txt ../stories/uploads.js ../stories/upload-rules.js /Users/Shared/VidAuto/stories/
 
 echo "Built: $APP"
 echo

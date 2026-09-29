@@ -52,6 +52,27 @@ The panel shows the current source video and how much is left. To start the next
 (for example after cutting a video by hand), type the timecode, e.g. `00;07;45;01`, and click
 **Set start of next video**. Progress is kept in `/Users/drick/Documents/AITA/vidauto-usage.json`.
 
+## Upload (YouTube for now; TikTok and Facebook next)
+
+Click **Upload** in the panel (or double-click `stories/Upload Videos.command`), or tick **Upload at the end of Run**.
+For every finished date folder from today on, it schedules on YouTube (Eastern time, on the folder's date):
+the full video at 11:30 AM and Part 1-5 at 1:30, 3:30, 5:30, 7:30 and 9:30 PM. A Part 6 or later isn't scheduled
+(the log says so). Title = the video's name; description:
+
+    AITA - <title> (Part 1)
+
+    Gameplay Video Credit: <creator>
+
+    #storytime #redditstoryteller #RelationshipDrama #reddit
+
+The creator comes from the source video's "Authors" info ("Orbital - No Copyright Gameplay" -> "Orbital"); to set it
+yourself, put `<source video name>.credit.txt` next to that video in Source Video. Each date folder notes its source
+video in `source.txt`. What's been scheduled is kept in `/Users/drick/Documents/AITA/vidauto-uploads.json`, so
+nothing is posted twice; the log is `vidauto-uploads-log.txt`.
+
+It drives YouTube Studio in Chrome and types the file's location into the Mac's file window, so leave the mouse
+and keyboard alone while it runs. Tick **Test: just one** to schedule a single video.
+
 ## Stage 0: Get stories (testing, separate for now)
 
 Double-click `premiere-plugin/stories/Get Stories.command` and press Enter. It makes a story for every date from

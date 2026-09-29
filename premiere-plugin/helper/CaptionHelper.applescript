@@ -340,6 +340,24 @@ on getStories()
 	end try
 end getStories
 
+-- Upload: schedule the finished videos (uploads.js). /Users/Shared/VidAuto/uploads-args.txt holds
+-- "<platform> <how many>". Needs Accessibility (to type into the file window), which this helper has.
+on uploadVideos()
+	do shell script "mkdir -p /Users/Shared/VidAuto && : > " & quoted form of logPath
+	logLine("Uploading")
+	try
+		set args to "youtube 0"
+		try
+			set args to do shell script "tr -cd 'a-z0-9 ' < /Users/Shared/VidAuto/uploads-args.txt"
+		end try
+		set r to do shell script "cd /Users/Shared/VidAuto/stories && osascript -l JavaScript uploads.js " & args & " /Users/Shared/VidAuto/stories 2>/dev/null | tail -1"
+		if r is "" then set r to "finished (see the uploads log)"
+		logLine("RESULT: " & r)
+	on error errMsg number errNum
+		logLine("ERROR " & errNum & " uploading: " & errMsg)
+	end try
+end uploadVideos
+
 -- Voiceover lengths: /Users/Shared/VidAuto/durations-in.txt lists files; writes "path|seconds" lines to durations-out.txt
 on measureVoiceovers()
 	do shell script "mkdir -p /Users/Shared/VidAuto && : > " & quoted form of logPath
@@ -376,6 +394,8 @@ on open location theURL
 		my convertVideo()
 	else if theURL starts with "vidauto-helper://stories" then
 		my getStories()
+	else if theURL starts with "vidauto-helper://uploads" then
+		my uploadVideos()
 	else if theURL starts with "vidauto-helper://durations" then
 		my measureVoiceovers()
 	else if theURL starts with "vidauto-helper://notify" then

@@ -35,6 +35,8 @@ const DURATIONS_IN = HELPER_DIR + "/durations-in.txt"; // voiceovers to measure
 const DURATIONS_OUT = HELPER_DIR + "/durations-out.txt";
 const NOTIFY_FILE = HELPER_DIR + "/notify.txt";
 const STORIES_COUNT = HELPER_DIR + "/stories-count.txt"; // how many stories (0 = the rest of the week)
+const UPLOADS_ARGS = HELPER_DIR + "/uploads-args.txt"; // "<platform> <how many, 0 = all>"
+const UPLOADS_LOG = AITA_DIR + "/vidauto-uploads-log.txt";
 const TITLE_FILE = "title.txt";
 const DONE_MARKER = "vidauto-done.txt"; // written once the full video and every clip are exported // story title, in each date folder (until Stage 0 writes it)
 const TITLE_TRACK = 1; // V2
@@ -42,7 +44,7 @@ const ARROW_TRACK = 2; // V3
 const ARROW_SECONDS = 5;
 const CLIP_ARROW_AT = 5; // seconds into each clip
 const TICKS_PER_SECOND = 254016000000;
-const PLUGIN_VERSION = "0.6.2";
+const PLUGIN_VERSION = "0.7.0";
 
 const state = { clip: null, transcript: null, cut: null, sequence: null };
 
@@ -1054,6 +1056,8 @@ async function makeVideo(project, folderPath, voiceoverName, usage) {
   log(`  voiceover length ${formatTime(needed)}`);
 
   const used = await addVideo(project, seq, needed, usage);
+  // which source video this story used (the Upload step reads the gameplay creator's name from it)
+  await writeTextFile(folderPath + "/source.txt", `${SOURCE_DIR}/${used.name}\n`);
   await project.setActiveSequence(seq);
   await project.openSequence(seq);
 
@@ -1127,6 +1131,34 @@ async function getStories(count = 0) {
   return { text: result.replace(/^RESULT:\s*/, ""), folders: made };
 }
 
+// Upload: the helper schedules the finished videos (YouTube for now). Its progress is copied into this log.
+async function uploadVideos(testOne) {
+  let seen = ((await readTextFile(UPLOADS_LOG)) || "").length;
+  const copyNewLines = async () => {
+    const text = (await readTextFile(UPLOADS_LOG)) || "";
+    if (text.length < seen) seen = 0;
+    const fresh = text.slice(seen).trim();
+    seen = text.length;
+    if (fresh) fresh.split(/\n/).forEach((l) => log("  " + l.replace(/^\S+\s+(AM|PM)?\s*/, "")));
+  };
+  log("--- Scheduling uploads (Chrome; hands off the mouse and keyboard)");
+  setRunStatus("", "scheduling uploads... hands off the mouse and keyboard");
+  await writeTextFile(UPLOADS_ARGS, `youtube ${testOne ? 1 : 0}\n`);
+  await startHelper("uploads");
+  const t0 = Date.now();
+  let helperLog = "";
+  while (Date.now() - t0 < 10 * 3600 * 1000) {
+    await new Promise((r) => setTimeout(r, 5000));
+    await copyNewLines();
+    helperLog = (await readTextFile(HELPER_LOG)) || "";
+    if (/RESULT|ERROR/.test(helperLog)) break;
+  }
+  await copyNewLines();
+  const result = (helperLog.match(/(RESULT|ERROR)[^\n]*/) || ["no result from the helper"])[0].replace(/^RESULT:\s*/, "");
+  log(`  uploads: ${result}`);
+  return result;
+}
+
 // Voiceover lengths in seconds (through the helper's afinfo), keyed by path
 async function voiceoverLengths(paths) {
   await writeTextFile(DURATIONS_IN, paths.join("\n") + "\n");
@@ -1190,20 +1222,22 @@ async function makeVideos(project, withFootageCheck, onlyFolders = null, limit =
 
 // The three buttons: everything, stories only, videos only
 async function runButton(which) {
-  const buttons = ["run", "runStories", "runVideos"].map((id) => document.getElementById(id));
+  const buttons = ["run", "runStories", "runVideos", "runUploads"].map((id) => document.getElementById(id));
   buttons.forEach((b) => b.setAttribute("disabled", ""));
   const testOne = document.getElementById("testOne").checked;
-  log(`=== ${which === "all" ? "Run (stories, then videos)" : which === "stories" ? "Get stories only" : "Make videos only"}` +
+  const names = { all: "Run (stories, then videos)", stories: "Get stories only", videos: "Make videos only", uploads: "Upload" };
+  const uploadAfter = which === "uploads" || (which === "all" && document.getElementById("uploadAfter").checked);
+  log(`=== ${names[which]}${which === "all" && uploadAfter ? " + upload" : ""}` +
     (testOne ? " - TEST: one only" : ""));
   let stories = "";
   try {
     let project = null;
-    if (which !== "stories") {
+    if (which === "all" || which === "videos") {
       project = await activeProject();
       log(`Project: ${project.name}`);
     }
     let fresh = [];
-    if (which !== "videos") {
+    if (which === "all" || which === "stories") {
       const got = await getStories(testOne ? 1 : 0);
       stories = got.text;
       fresh = got.folders; // in a test Run, make the video for the story just made (if there is one)
@@ -1212,11 +1246,14 @@ async function runButton(which) {
       log(fresh.length ? `  test: making the video for ${fresh[0]}` : "  test: no new story was made; making the oldest waiting video instead");
     }
     let made = { videos: 0, clips: 0, last: null };
-    if (which !== "stories") made = await makeVideos(project, true, which === "all" && testOne ? fresh : null, testOne ? 1 : 0);
+    if (which === "all" || which === "videos") made = await makeVideos(project, true, which === "all" && testOne ? fresh : null, testOne ? 1 : 0);
+    let uploads = "";
+    if (uploadAfter) uploads = await uploadVideos(testOne);
     const parts = [];
-    if (which !== "videos") parts.push(`Stories: ${stories}`);
-    if (which !== "stories") parts.push(`${made.videos} full video(s), ${made.clips} clip(s)` +
+    if (which === "all" || which === "stories") parts.push(`Stories: ${stories}`);
+    if (which === "all" || which === "videos") parts.push(`${made.videos} full video(s), ${made.clips} clip(s)` +
       (made.last ? `. ${made.last.name} has ${formatTime(made.last.remainingAfter)} of footage left.` : "."));
+    if (uploadAfter) parts.push(`Uploads: ${uploads}`);
     const summary = "Done. " + parts.join(" ");
     setRunStatus("ok", summary);
     log(summary);
@@ -1300,6 +1337,7 @@ STEPS.forEach(([name, fn], n) => {
 document.getElementById("run").addEventListener("click", () => runButton("all"));
 document.getElementById("runStories").addEventListener("click", () => runButton("stories"));
 document.getElementById("runVideos").addEventListener("click", () => runButton("videos"));
+document.getElementById("runUploads").addEventListener("click", () => runButton("uploads"));
 document.getElementById("setUsed").addEventListener("click", setUsedUpTo);
 showSourceStatus();
 
