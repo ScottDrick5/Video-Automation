@@ -15,8 +15,12 @@ test("video names and descriptions", () => {
   assert.deepStrictEqual(u.videoInfo(files[5]), { title: "AITA - Choosing My Daughter Over My DIL? (Part 2)", part: 2 });
   assert.strictEqual(u.videoInfo("title.txt"), null);
   assert.strictEqual(
-    u.description("AITA - Choosing My Daughter Over My DIL? (Part 1)", "Orbital"),
+    u.description("AITA - Choosing My Daughter Over My DIL? (Part 1)", "Orbital", "tiktok"),
     "AITA - Choosing My Daughter Over My DIL? (Part 1)\n\nGameplay Video Credit: Orbital\n\n#storytime #redditstoryteller #RelationshipDrama #reddit",
+  );
+  assert.strictEqual(
+    u.description("AITA - Choosing My Daughter Over My DIL? (Part 1)", "Orbital", "youtube"),
+    "Gameplay Video Credit: Orbital\n\n#storytime #redditstoryteller #RelationshipDrama #reddit",
   );
   assert.strictEqual(u.creditFromAuthor('(\n    "Orbital - No Copyright Gameplay"\n)'.replace(/\n\s*/g, "")), "Orbital");
   assert.strictEqual(u.creditFromAuthor("(null)"), null);

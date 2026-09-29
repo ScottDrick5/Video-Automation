@@ -25,8 +25,11 @@ function videoInfo(fileName) {
   return { title: m[1], part: m[3] ? Number(m[3]) : 0 };
 }
 
-function description(title, credit) {
-  return `${title}\n\nGameplay Video Credit: ${credit}\n\n${HASHTAGS}`;
+// YouTube has its own title box, so its description starts with the credit; TikTok and Facebook start with the
+// video's name.
+function description(title, credit, platform) {
+  const body = `Gameplay Video Credit: ${credit}\n\n${HASHTAGS}`;
+  return platform === "youtube" ? body : `${title}\n\n${body}`;
 }
 
 // Creator's name from a video file's "Authors" info, e.g. "Orbital - No Copyright Gameplay" -> "Orbital"
@@ -66,7 +69,7 @@ function uploadPlan(platform, folders, uploaded, now) {
         skipped.push(`${f.name}: no gameplay credit found`);
         continue;
       }
-      items.push({ key, folder: f.name, file, title: v.title, description: description(v.title, f.credit), when: when.getTime() });
+      items.push({ key, folder: f.name, file, title: v.title, description: description(v.title, f.credit, platform), when: when.getTime() });
     }
   }
   items.sort((a, b) => a.when - b.when || a.file.localeCompare(b.file));
