@@ -294,7 +294,13 @@ function youtube(item, review) {
     }
     // Details -> Video elements -> Checks -> Visibility
     for (let i = 0; i < 3; i++) {
-      jsClick(id, ["#next-button"], 'the "Next" button');
+      try {
+        jsClick(id, ["#next-button"], 'the "Next" button');
+      } catch (e) {
+        // YouTube hides "Next" when it refuses the upload (e.g. the daily limit)
+        if (limitShown() || !has(id, ["#next-button"])) throw new UploadLimit("YouTube stopped the upload (no \"Next\" button; most likely the daily upload limit)");
+        throw e;
+      }
       delay(2);
     }
     waitFor(id, ["#second-container-expand-button", 'tp-yt-paper-radio-button[name="SCHEDULE"]', "text:Schedule"], 30, "The visibility page");
@@ -337,7 +343,11 @@ function youtube(item, review) {
     log(`  scheduled on YouTube for ${day} ${time}`);
     delay(3);
   } catch (e) {
-    if (e instanceof UploadLimit) throw e; // YouTube refused it, so nothing was uploaded: close the tab
+    if (e instanceof UploadLimit) {
+      // YouTube refused it. If it got as far as the details page, a stopped draft may be left in YouTube Studio.
+      if (picked) log("  (if YouTube Studio shows this video as a stopped draft, delete that draft; it will be uploaded again next run)");
+      throw e;
+    }
     if (picked) {
       // the video is already on YouTube (counts toward the daily limit): leave it open to finish by hand
       keepOpen = true;
