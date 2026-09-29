@@ -19,6 +19,9 @@ const LIMITS_FILE = AITA_DIR + "/vidauto-upload-limits.json"; // e.g. { "youtube
 const DEFAULT_DAILY_LIMIT = { youtube: 10, tiktok: 10, facebook: 10 };
 
 class AfterFilePicked extends Error {} // failed after the file was chosen: that upload already counts
+class UploadLimit extends Error {} // YouTube says the daily upload limit is reached
+const LIMIT_TEXT = /daily upload limit|upload limit (reached|exceeded)|reached (your|the) (daily )?(upload )?limit|can.t upload more videos/i;
+const DEFAULT_PAUSE_MINUTES = 3; // wait between uploads so they don't arrive back to back
 
 let U = null; // upload-rules.js
 const chrome = Application("Google Chrome");
@@ -260,11 +263,19 @@ function youtube(item, review) {
   let picked = false;
   let keepOpen = false;
   try {
+    const limitShown = () => LIMIT_TEXT.test(js(id, "document.body.innerText"));
     waitFor(id, ["#select-files-button", "text:Select files"], 60, 'YouTube Studio\'s "Select files" button');
+    if (limitShown()) throw new UploadLimit("YouTube says the daily upload limit is reached");
     realClick(id, ["#select-files-button", "text:Select files"], 'the "Select files" button');
     pickFile(path);
     picked = true;
-    waitFor(id, ["#title-textarea #textbox", "#title-textarea [contenteditable]"], 90, "The video details page");
+    // wait for the details page, watching for YouTube's upload-limit message
+    const until = Date.now() + 90000;
+    while (!has(id, ["#title-textarea #textbox", "#title-textarea [contenteditable]"])) {
+      if (limitShown()) throw new UploadLimit("YouTube says the daily upload limit is reached");
+      if (Date.now() > until) throw new Error(`The video details page didn't appear${dump(id)}`);
+      delay(1);
+    }
     delay(2);
     log(`  uploading; title: ${setText(id, ["#title-textarea #textbox", "#title-textarea [contenteditable]"], item.title, "the title box")}`);
     // keep your saved default description; change only the credit's name
@@ -326,6 +337,7 @@ function youtube(item, review) {
     log(`  scheduled on YouTube for ${day} ${time}`);
     delay(3);
   } catch (e) {
+    if (e instanceof UploadLimit) throw e; // YouTube refused it, so nothing was uploaded: close the tab
     if (picked) {
       // the video is already on YouTube (counts toward the daily limit): leave it open to finish by hand
       keepOpen = true;
@@ -405,8 +417,19 @@ function run(argv) {
   missing.forEach((m) => log(`  NO CREDIT for ${m}: in the VidAuto panel type the creator's name next to "Gameplay credit" and click Set, then run Upload again.`));
   plan.skipped.forEach((s) => log(`  skipped: ${s}`));
 
+  // YouTube already said "limit reached" today: don't try again until tomorrow
+  if (record.limitHit && record.limitHit[platform] === today && items.length) {
+    log(`YouTube's daily upload limit was reached earlier today; the ${items.length} waiting video(s) go up on the next run tomorrow.`);
+    return `YouTube's daily limit was already reached today; ${items.length} video(s) wait for tomorrow.`;
+  }
+  const pause = Number(limits.pauseMinutes === undefined ? DEFAULT_PAUSE_MINUTES : limits.pauseMinutes);
+
   let done = 0;
-  for (const item of items) {
+  for (const [n, item] of items.entries()) {
+    if (n > 0 && pause > 0) {
+      log(`  waiting ${pause} minute(s) before the next upload...`);
+      delay(pause * 60);
+    }
     log(`${item.file} -> ${U.studioDate(item.when)} ${U.studioTime(item.when)}`);
     const remember = (note) => {
       record.uploads.push({ key: item.key, when: new Date(item.when).toISOString(), at: new Date().toISOString(), ...(note ? { note } : {}) });
@@ -421,6 +444,13 @@ function run(argv) {
         return "Test: everything is filled in on YouTube; check it and click Schedule in the open tab.";
       }
     } catch (e) {
+      if (e instanceof UploadLimit) {
+        record.limitHit = { ...(record.limitHit || {}), [platform]: today };
+        writeText(UPLOADS_FILE, JSON.stringify(record, null, 2));
+        log(`YouTube's daily upload limit reached after ${done} upload(s) this run. This video wasn't uploaded;`);
+        log(`it and the other ${items.length - done - 1} waiting video(s) go up on the next run (tomorrow).`);
+        return `YouTube's daily limit reached after ${done}; ${items.length - done} video(s) wait for tomorrow.`;
+      }
       // an upload that already started is remembered, so it's never uploaded a second time
       if (e instanceof AfterFilePicked) remember("failed partway: finish by hand");
       log(`  FAILED: ${e.message}`);

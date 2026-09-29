@@ -81,6 +81,10 @@ Protecting your daily upload limit:
   hand, that video is remembered so it's never uploaded twice, and the run stops.
 - It never uploads more than your daily limit (counting today's earlier uploads). Default 10 a day; to change it,
   create `/Users/drick/Documents/AITA/vidauto-upload-limits.json` with e.g. `{ "youtube": 15 }`.
+- If YouTube itself says the daily upload limit is reached, it stops without uploading that video, and doesn't try
+  YouTube again until the next day; everything waiting goes up on the next run.
+- It waits 3 minutes between uploads so they don't arrive back to back (`"pauseMinutes": 5` in the same file changes
+  that).
 
 ## Stage 0: Get stories (testing, separate for now)
 
