@@ -32,6 +32,14 @@ function description(title, credit, platform) {
   return platform === "youtube" ? body : `${title}\n\n${body}`;
 }
 
+// YouTube fills in your saved default description ("Gameplay Video Credit: Spicy Sauce ... #hashtags"): keep it
+// and change only the name after "Gameplay Video Credit:". If there's no such line, use `fallback`.
+function withCredit(existing, credit, fallback) {
+  const text = String(existing || "");
+  if (!/gameplay video credit\s*:/i.test(text)) return fallback;
+  return text.replace(/(gameplay video credit\s*:[ \t]*)[^\n]*/i, (m, lead) => lead + credit);
+}
+
 // Creator's name from a video file's "Authors" info, e.g. "Orbital - No Copyright Gameplay" -> "Orbital"
 function creditFromAuthor(author) {
   if (/^\(?\s*null\s*\)?$/i.test(String(author || "").trim())) return null;
@@ -69,7 +77,7 @@ function uploadPlan(platform, folders, uploaded, now) {
         skipped.push(`${f.name}: no gameplay credit found`);
         continue;
       }
-      items.push({ key, folder: f.name, file, title: v.title, description: description(v.title, f.credit, platform), when: when.getTime() });
+      items.push({ key, folder: f.name, file, title: v.title, credit: f.credit, description: description(v.title, f.credit, platform), when: when.getTime() });
     }
   }
   items.sort((a, b) => a.when - b.when || a.file.localeCompare(b.file));
@@ -89,5 +97,5 @@ function studioTime(ms) {
 }
 
 if (typeof module !== "undefined") {
-  module.exports = { TIMES, HASHTAGS, folderDay, videoInfo, description, creditFromAuthor, uploadPlan, studioDate, studioTime };
+  module.exports = { TIMES, HASHTAGS, folderDay, videoInfo, description, withCredit, creditFromAuthor, uploadPlan, studioDate, studioTime };
 }

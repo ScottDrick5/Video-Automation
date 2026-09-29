@@ -24,6 +24,9 @@ test("video names and descriptions", () => {
   );
   assert.strictEqual(u.creditFromAuthor('(\n    "Orbital - No Copyright Gameplay"\n)'.replace(/\n\s*/g, "")), "Orbital");
   assert.strictEqual(u.creditFromAuthor("(null)"), null);
+  const saved = "Gameplay Video Credit: Spicy Sauce\n\n#storytime #redditstoryteller #RelationshipDrama #reddit";
+  assert.strictEqual(u.withCredit(saved, "Orbital", "x"), "Gameplay Video Credit: Orbital\n\n#storytime #redditstoryteller #RelationshipDrama #reddit");
+  assert.strictEqual(u.withCredit("", "Orbital", "fallback"), "fallback");
 });
 
 test("YouTube plan: full video 11:30 AM, parts every two hours from 1:30 PM, no Part 6", () => {

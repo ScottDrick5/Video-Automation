@@ -57,8 +57,8 @@ The panel shows the current source video and how much is left. To start the next
 Click **Upload** in the panel (or double-click `stories/Upload Videos.command`), or tick **Upload at the end of Run**.
 For every finished date folder from today on, it schedules on YouTube (Eastern time, on the folder's date):
 the full video at 11:30 AM and Part 1-5 at 1:30, 3:30, 5:30, 7:30 and 9:30 PM. A Part 6 or later isn't scheduled
-(the log says so). Title = the video's name; description (on TikTok and Facebook it starts with the video's
-name, then a blank line):
+(the log says so). Title = the video's name. On YouTube your saved default description is kept and only the name
+after "Gameplay Video Credit:" is changed. On TikTok and Facebook the text is the video's name, a blank line, then:
 
     Gameplay Video Credit: <creator>
 

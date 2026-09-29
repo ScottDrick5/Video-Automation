@@ -267,7 +267,15 @@ function youtube(item, review) {
     waitFor(id, ["#title-textarea #textbox", "#title-textarea [contenteditable]"], 90, "The video details page");
     delay(2);
     log(`  uploading; title: ${setText(id, ["#title-textarea #textbox", "#title-textarea [contenteditable]"], item.title, "the title box")}`);
-    setText(id, ["#description-textarea #textbox", "#description-textarea [contenteditable]"], item.description, "the description box");
+    // keep your saved default description; change only the credit's name
+    const descBox = ["#description-textarea #textbox", "#description-textarea [contenteditable]"];
+    const current = js(id, `(function () { ${FIND_JS}
+      for (const s of ${JSON.stringify(descBox)}) { const e = find(s); if (e) return e.innerText; }
+      return "";
+    })()`);
+    const wanted = U.withCredit(current, item.credit, item.description);
+    if (wanted.trim() !== current.trim()) setText(id, descBox, wanted, "the description box");
+    log(`  description: ${wanted.split("\n")[0]}${current.trim() ? "" : " (your default description was empty, so the full one was filled in)"}`);
     try {
       jsClick(id, ['tp-yt-paper-radio-button[name="VIDEO_MADE_FOR_KIDS_NOT_MFK"]'], '"No, it\'s not made for kids"');
     } catch (e) {
