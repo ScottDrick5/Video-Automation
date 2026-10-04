@@ -85,8 +85,10 @@ Protecting your daily upload limit:
   YouTube again until the next day; everything waiting goes up on the next run.
 - Uploaded some videos by hand? Double-click `stories/Mark Uploaded Through.command`, type the last date folder
   that's already posted (e.g. 10-05-26) and the platforms, and those videos are never uploaded again.
-- It waits 3 minutes between uploads so they don't arrive back to back (`"pauseMinutes": 5` in the same file changes
-  that).
+- It uploads one date folder at a time: all of that folder's videos are sent together (they arrive as private
+  drafts), then it opens each draft from the Content list, changes the credit and schedules it. If something stops
+  it partway, the unfinished ones stay private drafts (the log lists them) and are never uploaded twice.
+- It waits 1 minute between folders (`"pauseMinutes": 2` in the same file changes that).
 
 ## Stage 0: Get stories (testing, separate for now)
 
