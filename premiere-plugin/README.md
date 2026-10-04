@@ -83,6 +83,8 @@ Protecting your daily upload limit:
   create `/Users/drick/Documents/AITA/vidauto-upload-limits.json` with e.g. `{ "youtube": 15 }`.
 - If YouTube itself says the daily upload limit is reached, it stops without uploading that video, and doesn't try
   YouTube again until the next day; everything waiting goes up on the next run.
+- Uploaded some videos by hand? Double-click `stories/Mark Uploaded Through.command`, type the last date folder
+  that's already posted (e.g. 10-05-26) and the platforms, and those videos are never uploaded again.
 - It waits 3 minutes between uploads so they don't arrive back to back (`"pauseMinutes": 5` in the same file changes
   that).
 
