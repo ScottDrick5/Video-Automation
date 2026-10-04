@@ -6,6 +6,11 @@ and never deletes anything.
 
 ## Weekly use (one click)
 
+**Stop** (next to Run) stops any run at the next safe point: after the current story, between date folders when
+making videos, and before the next draft or folder when uploading (videos already uploaded stay private drafts and
+are listed in the log). An export that's in progress can be cancelled in Premiere. A `.command` file running in
+Terminal stops with Ctrl+C.
+
 1. Open Chrome (signed in to chatgpt.com and reddit.com) and Premiere with **AITA Template.prproj**, Text panel
    floating.
 2. In the **VidAuto** panel click **Run** and keep your hands off the mouse and Chrome (about 1-1.5 hours for a week).

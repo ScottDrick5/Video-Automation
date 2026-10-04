@@ -20,6 +20,11 @@ const DEFAULT_DAILY_LIMIT = { youtube: 10, tiktok: 10, facebook: 10 };
 
 class AfterFilePicked extends Error {} // failed after the file was chosen: that upload already counts
 class UploadLimit extends Error {} // YouTube says the daily upload limit is reached
+class StopRequested extends Error {} // the panel's Stop button
+const STOP_FILE = "/Users/Shared/VidAuto/stop.txt";
+function checkStop() {
+  if (exists(STOP_FILE)) throw new StopRequested("Stopped by you");
+}
 const LIMIT_TEXT = /daily upload limit|upload limit (reached|exceeded)|reached (your|the) (daily )?(upload )?limit|can.t upload more videos/i;
 const DEFAULT_PAUSE_MINUTES = 1; // short wait between folders
 
@@ -429,6 +434,7 @@ function youtubeFolder(group, remember) {
     delay(2);
 
     for (const item of group) {
+      checkStop(); // the rest stay private drafts (listed in the log)
       // the Content list, newest first, where each draft has an "Edit draft" button
       js(id, `location.href = "https://studio.youtube.com/channel/${YT_CHANNEL}/videos/upload"; "ok"`);
       waitLoaded(id);
@@ -617,6 +623,10 @@ function run(argv) {
       log(`  waiting ${pause} minute(s) before the next folder...`);
       delay(pause * 60);
     }
+    if (exists(STOP_FILE)) {
+      log(`STOPPED by you after ${done} of ${items.length}.`);
+      return `Stopped by you after ${done} of ${items.length}.`;
+    }
     log(`--- ${group[0].folder}: uploading ${group.length} video(s) together`);
     try {
       done += youtubeFolder(group, remember);
@@ -625,6 +635,10 @@ function run(argv) {
       if (e instanceof UploadLimit) {
         log(`  ${e.message}`);
         return limitStop(items.length - done);
+      }
+      if (e instanceof StopRequested) {
+        log(`STOPPED by you after ${done} of ${items.length}.${e.message.replace(/^Stopped by you/, "")}`);
+        return `Stopped by you after ${done} of ${items.length}.`;
       }
       log(`  FAILED: ${e.message}`);
       log("STOPPED so nothing gets posted twice or at the wrong time. Check YouTube Studio, then run again.");

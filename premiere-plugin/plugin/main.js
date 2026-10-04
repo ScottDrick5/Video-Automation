@@ -34,6 +34,7 @@ const STORIES_LOG = AITA_DIR + "/vidauto-stories-log.txt"; // Get Stories' progr
 const DURATIONS_IN = HELPER_DIR + "/durations-in.txt"; // voiceovers to measure
 const DURATIONS_OUT = HELPER_DIR + "/durations-out.txt";
 const NOTIFY_FILE = HELPER_DIR + "/notify.txt";
+const STOP_FILE = HELPER_DIR + "/stop.txt"; // the Stop button: the scripts finish their current step and stop
 const STORIES_COUNT = HELPER_DIR + "/stories-count.txt"; // how many stories (0 = the rest of the week)
 const UPLOADS_ARGS = HELPER_DIR + "/uploads-args.txt"; // "<platform> <how many, 0 = all>"
 const UPLOADS_LOG = AITA_DIR + "/vidauto-uploads-log.txt";
@@ -44,7 +45,7 @@ const ARROW_TRACK = 2; // V3
 const ARROW_SECONDS = 5;
 const CLIP_ARROW_AT = 5; // seconds into each clip
 const TICKS_PER_SECOND = 254016000000;
-const PLUGIN_VERSION = "0.7.2";
+const PLUGIN_VERSION = "0.8.0";
 
 const state = { clip: null, transcript: null, cut: null, sequence: null };
 
@@ -1084,6 +1085,28 @@ function setRunStatus(cls, text) {
   status.textContent = text;
 }
 
+// The Stop button: tells the helper's scripts (stories, uploads) and the video loop to stop at the next safe point
+async function requestStop() {
+  state.stopRequested = true;
+  await writeTextFile(STOP_FILE, "stop\n");
+  setRunStatus("", "stopping after the current step...");
+  log("STOP requested: finishing the current step, then stopping (an export in progress can be cancelled in Premiere).");
+}
+
+async function clearStop() {
+  state.stopRequested = false;
+  try {
+    const entry = await fs.getEntryWithUrl("file:" + STOP_FILE);
+    await entry.delete();
+  } catch (e) {
+    // no stop file
+  }
+}
+
+function checkStop() {
+  if (state.stopRequested) throw new Error("Stopped by you");
+}
+
 // Mac notification with a sound (through the helper)
 async function notify(ok, message) {
   try {
@@ -1212,6 +1235,7 @@ async function makeVideos(project, withFootageCheck, onlyFolders = null, limit =
   let last = null;
   let clips = 0;
   for (const [i, f] of todo.entries()) {
+    checkStop();
     log(`--- ${f.name} (${i + 1} of ${todo.length})`);
     setRunStatus("", `making video ${f.name} (${i + 1} of ${todo.length})... keep hands off the mouse`);
     last = await makeVideo(project, CLIPS_DIR + "/" + f.name, f.voiceover, usage);
@@ -1225,6 +1249,8 @@ async function makeVideos(project, withFootageCheck, onlyFolders = null, limit =
 async function runButton(which) {
   const buttons = ["run", "runStories", "runVideos", "runUploads"].map((id) => document.getElementById(id));
   buttons.forEach((b) => b.setAttribute("disabled", ""));
+  document.getElementById("stop").removeAttribute("disabled");
+  await clearStop();
   const testOne = document.getElementById("testOne").checked;
   const names = { all: "Run (stories, then videos)", stories: "Get stories only", videos: "Make videos only", uploads: "Upload" };
   const uploadAfter = which === "uploads" || (which === "all" && document.getElementById("uploadAfter").checked);
@@ -1247,9 +1273,13 @@ async function runButton(which) {
       log(fresh.length ? `  test: making the video for ${fresh[0]}` : "  test: no new story was made; making the oldest waiting video instead");
     }
     let made = { videos: 0, clips: 0, last: null };
+    checkStop();
     if (which === "all" || which === "videos") made = await makeVideos(project, true, which === "all" && testOne ? fresh : null, testOne ? 1 : 0);
     let uploads = "";
-    if (uploadAfter) uploads = await uploadVideos(testOne);
+    if (uploadAfter) {
+      checkStop();
+      uploads = await uploadVideos(testOne);
+    }
     const parts = [];
     if (which === "all" || which === "stories") parts.push(`Stories: ${stories}`);
     if (which === "all" || which === "videos") parts.push(`${made.videos} full video(s), ${made.clips} clip(s)` +
@@ -1268,6 +1298,8 @@ async function runButton(which) {
     await notify(false, (stories ? `Stories: ${stories} ` : "") + msg);
   } finally {
     buttons.forEach((b) => b.removeAttribute("disabled"));
+    document.getElementById("stop").setAttribute("disabled", "");
+    await clearStop();
   }
 }
 
@@ -1361,6 +1393,7 @@ document.getElementById("run").addEventListener("click", () => runButton("all"))
 document.getElementById("runStories").addEventListener("click", () => runButton("stories"));
 document.getElementById("runVideos").addEventListener("click", () => runButton("videos"));
 document.getElementById("runUploads").addEventListener("click", () => runButton("uploads"));
+document.getElementById("stop").addEventListener("click", requestStop);
 document.getElementById("setUsed").addEventListener("click", setUsedUpTo);
 document.getElementById("setCredit").addEventListener("click", setCredit);
 showSourceStatus();

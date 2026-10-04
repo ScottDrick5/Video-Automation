@@ -446,6 +446,10 @@ function run(argv) {
   let made = 0;
   let next = 0;
   for (const folder of dates) {
+    if (exists("/Users/Shared/VidAuto/stop.txt")) {
+      log(`STOPPED by you after ${made} of ${count} stories.`);
+      return `Stopped by you after ${made} of ${count} stories.`;
+    }
     let done = false;
     while (!done && next < picked.length) {
       const post = picked[next++];
