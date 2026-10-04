@@ -1,7 +1,7 @@
 // Run with: node --test premiere-plugin/tests/*.test.js
 const test = require("node:test");
 const assert = require("node:assert");
-const { footageCheck, folderDate, foldersToDo, chooseSource, fillScale, timecodeToSeconds, videoSizeFrom, formatTime } = require("../plugin/lib/plan");
+const { foldersInText, footageCheck, folderDate, foldersToDo, chooseSource, fillScale, timecodeToSeconds, videoSizeFrom, formatTime } = require("../plugin/lib/plan");
 
 test("folder names are read as posting dates", () => {
   assert.strictEqual(folderDate("9-25-26"), 20260925);
@@ -91,4 +91,13 @@ test("footage check for a whole batch", () => {
   assert.strictEqual(r.done, 4);
   assert.strictEqual(usage["a.mp4"].usedUpTo, 500, "usage is not changed");
   assert.strictEqual(footageCheck([...videos, { name: "c.mp4", created: 3 }], usage, [300, 300, 400, 400, 400]).ok, null);
+});
+
+test("typed date folders and ranges", () => {
+  const names = ["9-30-26", "10-01-26", "10-02-26", "10-03-26", "10-06-26", "misc"];
+  assert.deepStrictEqual(foldersInText("10-01-26 to 10-03-26", names), ["10-01-26", "10-02-26", "10-03-26"]);
+  assert.deepStrictEqual(foldersInText("10-06-26, 9-30-26", names), ["9-30-26", "10-06-26"]);
+  assert.deepStrictEqual(foldersInText("9-30-26 and 10-02-26 through 10-03-26", names), ["9-30-26", "10-02-26", "10-03-26"]);
+  assert.deepStrictEqual(foldersInText("10-1-26", names), ["10-01-26"]);
+  assert.strictEqual(foldersInText("last week", names), null);
 });

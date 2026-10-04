@@ -7,7 +7,7 @@ const ppro = require("premierepro");
 const uxp = require("uxp");
 const fs = uxp.storage.localFileSystem;
 const { findCutPoint, flattenWords, aholeTerms } = require("./lib/transcript.js");
-const { foldersToDo, chooseSource, footageCheck, fillScale, timecodeToSeconds, videoSizeFrom, formatTime } = require("./lib/plan.js");
+const { foldersToDo, foldersInText, chooseSource, footageCheck, fillScale, timecodeToSeconds, videoSizeFrom, formatTime } = require("./lib/plan.js");
 const {
   MIN_CLIP, sequenceWords, loudnessFromWav, cutCandidates, planClips, fullArrowTimes, outputName, arrowColor,
 } = require("./lib/clips.js");
@@ -38,6 +38,7 @@ const STOP_FILE = HELPER_DIR + "/stop.txt"; // the Stop button: the scripts fini
 const STORIES_COUNT = HELPER_DIR + "/stories-count.txt"; // how many stories (0 = the rest of the week)
 const UPLOADS_ARGS = HELPER_DIR + "/uploads-args.txt"; // "<platform> <how many, 0 = all>"
 const UPLOADS_LOG = AITA_DIR + "/vidauto-uploads-log.txt";
+const UPLOADS_FILE = AITA_DIR + "/vidauto-uploads.json"; // what's posted already, so the Upload step skips it
 const TITLE_FILE = "title.txt";
 const DONE_MARKER = "vidauto-done.txt"; // written once the full video and every clip are exported // story title, in each date folder (until Stage 0 writes it)
 const TITLE_TRACK = 1; // V2
@@ -45,7 +46,7 @@ const ARROW_TRACK = 2; // V3
 const ARROW_SECONDS = 5;
 const CLIP_ARROW_AT = 5; // seconds into each clip
 const TICKS_PER_SECOND = 254016000000;
-const PLUGIN_VERSION = "0.8.0";
+const PLUGIN_VERSION = "0.8.1";
 
 const state = { clip: null, transcript: null, cut: null, sequence: null };
 
@@ -1352,6 +1353,41 @@ async function setCredit() {
   await showSourceStatus();
 }
 
+// "Already uploaded": record videos you posted yourself, so Upload never posts them again
+async function markUploaded() {
+  const text = document.getElementById("uploadedBox").value.trim();
+  const platforms = ["youtube", "tiktok", "facebook"].filter((p) => document.getElementById("mark-" + p).checked);
+  if (!text) return log('Type the date folders you uploaded yourself, e.g. "10-06-26, 10-07-26" or "10-06-26 to 10-09-26"');
+  if (!platforms.length) return log("Tick at least one platform (YouTube, TikTok, Facebook)");
+  const names = (await listFolder(CLIPS_DIR)).filter((e) => e.isFolder).map((e) => e.name);
+  const folders = foldersInText(text, names);
+  if (folders === null) return log(`Couldn't read "${text}". Type dates like 10-06-26, separated by commas, or a range like 10-06-26 to 10-09-26.`);
+  if (!folders.length) return log(`No date folders match "${text}"`);
+  let record = { uploads: [] };
+  try {
+    record = JSON.parse((await readTextFile(UPLOADS_FILE)) || '{"uploads":[]}');
+  } catch (e) {
+    return log(`Couldn't read ${UPLOADS_FILE} (${e.message}); nothing changed`);
+  }
+  const have = new Set(record.uploads.map((u) => u.key));
+  let added = 0;
+  for (const f of folders) {
+    const files = (await (await fs.getEntryWithUrl("file:" + CLIPS_DIR + "/" + f)).getEntries()).map((e) => e.name);
+    for (const file of files.filter((n) => /^AITA - .+ \((Full Video|Part \d+)\)\.mp4$/i.test(n))) {
+      for (const p of platforms) {
+        const key = `${p}|${f}|${file}`;
+        if (have.has(key)) continue;
+        record.uploads.push({ key, at: new Date().toISOString(), note: "marked as already uploaded (panel)" });
+        have.add(key);
+        added++;
+      }
+    }
+  }
+  await writeTextFile(UPLOADS_FILE, JSON.stringify(record, null, 2));
+  log(`Marked ${added} video(s) as already uploaded on ${platforms.join(", ")}: ${folders.join(", ")}. Upload will skip them.`);
+  document.getElementById("uploadedBox").value = "";
+}
+
 async function setUsedUpTo() {
   const tc = document.getElementById("usedUpTo").value;
   const seconds = timecodeToSeconds(tc);
@@ -1396,6 +1432,7 @@ document.getElementById("runUploads").addEventListener("click", () => runButton(
 document.getElementById("stop").addEventListener("click", requestStop);
 document.getElementById("setUsed").addEventListener("click", setUsedUpTo);
 document.getElementById("setCredit").addEventListener("click", setCredit);
+document.getElementById("markUploaded").addEventListener("click", markUploaded);
 showSourceStatus();
 
 document.getElementById("copy").addEventListener("click", async () => {

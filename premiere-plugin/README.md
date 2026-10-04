@@ -88,7 +88,9 @@ Protecting your daily upload limit:
   create `/Users/drick/Documents/AITA/vidauto-upload-limits.json` with e.g. `{ "youtube": 15 }`.
 - If YouTube itself says the daily upload limit is reached, it stops without uploading that video, and doesn't try
   YouTube again until the next day; everything waiting goes up on the next run.
-- Uploaded some videos by hand? Double-click `stories/Mark Uploaded Through.command`, type the last date folder
+- Uploaded some by hand? In the panel, type the date folders under **Already uploaded by hand** (e.g.
+  `10-06-26, 10-07-26` or `10-06-26 to 10-09-26`), tick the platforms and click **Mark uploaded**.
+  Or double-click `stories/Mark Uploaded Through.command`, type the last date folder
   that's already posted (e.g. 10-05-26) and the platforms, and those videos are never uploaded again.
 - It uploads one date folder at a time: all of that folder's videos are sent together (they arrive as private
   drafts), then it opens each draft from the Content list, changes the credit and schedules it. If something stops

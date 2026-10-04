@@ -16,7 +16,7 @@
     </style>
   </head>
   <body>
-    <h3>VidAuto <span class="hint">v0.8.0</span></h3>
+    <h3>VidAuto <span class="hint">v0.8.1</span></h3>
     <div class="hint">Run gets this week's stories in Chrome, then makes the full video and clips for every date folder with a voiceover but no full video yet. Open your AITA Template project and Chrome (signed in) first, and keep hands off the mouse while it runs.</div>
     <div class="step"><sp-button id="run" style="margin-right: 8px">Run</sp-button><sp-button id="stop" variant="negative" disabled>Stop</sp-button></div>
     <div class="step"><span class="status" id="runStatus"></span></div>
@@ -41,6 +41,16 @@
     <div class="step">
       <input type="text" id="creditBox" placeholder="Gameplay credit, e.g. Orbital" style="width: 180px; margin-right: 8px" />
       <sp-button id="setCredit" variant="secondary">Set</sp-button>
+    </div>
+    <div class="hint" style="margin-top: 10px">Already uploaded by hand? Type the date folders (e.g. 10-06-26, 10-07-26 or 10-06-26 to 10-09-26) so Upload skips them.</div>
+    <div class="step">
+      <input type="text" id="uploadedBox" placeholder="10-06-26 to 10-09-26" style="width: 180px; margin-right: 8px" />
+      <sp-button id="markUploaded" variant="secondary">Mark uploaded</sp-button>
+    </div>
+    <div class="step">
+      <input type="checkbox" id="mark-youtube" checked style="margin-right: 4px" /><label for="mark-youtube" style="margin-right: 12px">YouTube</label>
+      <input type="checkbox" id="mark-tiktok" style="margin-right: 4px" /><label for="mark-tiktok" style="margin-right: 12px">TikTok</label>
+      <input type="checkbox" id="mark-facebook" style="margin-right: 4px" /><label for="mark-facebook">Facebook</label>
     </div>
 
     <h3 style="margin-top: 18px">Test steps <span class="hint">(troubleshooting only)</span></h3>

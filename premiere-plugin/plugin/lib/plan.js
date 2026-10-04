@@ -73,6 +73,32 @@ function footageCheck(videos, usage, needs) {
   return { ok: true };
 }
 
+// Which date folders the user typed: "10-06-26, 10-08-26" and/or ranges "10-06-26 to 10-09-26".
+// folderNames: the existing date folders. Returns the matching folder names, oldest first, or null if the text
+// has something that isn't a date.
+function foldersInText(text, folderNames) {
+  const parts = String(text).toLowerCase().replace(/\bthrough\b|\bthru\b/g, " to ").split(/[,;]|\s+and\s+/).map((x) => x.trim()).filter(Boolean);
+  const wanted = [];
+  for (const part of parts) {
+    const range = part.split(/\s+to\s+/).map((x) => x.trim());
+    const pieces = range.length === 2 ? range : part.split(/\s+/);
+    if (range.length === 2) {
+      const [a, b] = range.map(folderDate);
+      if (a === null || b === null) return null;
+      wanted.push([Math.min(a, b), Math.max(a, b)]);
+    } else {
+      for (const p of pieces) {
+        const d = folderDate(p);
+        if (d === null) return null;
+        wanted.push([d, d]);
+      }
+    }
+  }
+  return folderNames
+    .filter((n) => folderDate(n) !== null && wanted.some(([a, b]) => folderDate(n) >= a && folderDate(n) <= b))
+    .sort((x, y) => folderDate(x) - folderDate(y));
+}
+
 // Scale (percent) that makes a w x h video cover a frameW x frameH frame, centred, with no black edges.
 function fillScale(w, h, frameW = 1080, frameH = 1920) {
   return Math.ceil(Math.max(frameW / w, frameH / h) * 100 * 100 + 5) / 100; // tiny overshoot avoids a 1px edge
@@ -112,4 +138,4 @@ function formatTime(seconds) {
   return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
 }
 
-module.exports = { folderDate, foldersToDo, chooseSource, footageCheck, fillScale, timecodeToSeconds, videoSizeFrom, formatTime };
+module.exports = { folderDate, foldersToDo, foldersInText, chooseSource, footageCheck, fillScale, timecodeToSeconds, videoSizeFrom, formatTime };
