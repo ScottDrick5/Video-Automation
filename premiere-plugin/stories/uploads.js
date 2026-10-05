@@ -563,7 +563,9 @@ function run(argv) {
   // never go over the daily upload limit (counting what was already uploaded today)
   const limits = Object.assign({}, DEFAULT_DAILY_LIMIT, JSON.parse(readText(LIMITS_FILE) || "{}"));
   const today = new Date().toDateString();
-  const doneToday = record.uploads.filter((x) => x.key.startsWith(platform + "|") && new Date(x.at).toDateString() === today).length;
+  // real uploads today only: videos you marked as already uploaded (posted by hand) don't count
+  const doneToday = record.uploads.filter((x) => x.key.startsWith(platform + "|") && new Date(x.at).toDateString() === today &&
+    !/marked as already uploaded/i.test(x.note || "")).length;
   const room = Math.max(0, limits[platform] - doneToday);
   if (items.length > room) {
     log(`  daily limit: ${limits[platform]} a day, ${doneToday} already today, so ${room} now; the other ${items.length - room} wait for the next run`);
