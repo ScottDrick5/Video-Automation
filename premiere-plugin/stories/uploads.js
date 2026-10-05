@@ -371,17 +371,18 @@ function youtube(item, review) {
   }
 }
 
-// The Mac's "choose files" window: go to a folder and choose everything in it
-function pickAllIn(folder) {
+// The Mac's "choose files" window: go to one file by its full location (that's reliable: it opens its folder
+// with the file selected), then select every file in that folder and open them.
+function pickAllIn(folder, firstFile) {
   delay(2);
   keys.keystroke("g", { using: ["command down", "shift down"] });
   delay(1.2);
-  keys.keystroke(folder);
-  delay(1);
-  keys.keyCode(36); // Return: go to the folder
+  keys.keystroke(`${folder}/${firstFile}`);
+  delay(1.2);
+  keys.keyCode(36); // Return: go to the file (its folder opens with the file selected)
   delay(2);
-  keys.keystroke("a", { using: "command down" }); // select all its files
-  delay(0.8);
+  keys.keystroke("a", { using: "command down" }); // select all the files in that folder
+  delay(1);
   keys.keyCode(36); // Return: open them
   delay(3);
 }
@@ -405,18 +406,24 @@ function youtubeFolder(group, remember) {
     waitFor(id, ["#select-files-button", "text:Select files"], 60, 'YouTube Studio\'s "Select files" button');
     if (limitShown()) throw new UploadLimit("YouTube says the daily upload limit is reached");
     realClick(id, ["#select-files-button", "text:Select files"], 'the "Select files" button');
-    pickAllIn(batch);
+    pickAllIn(batch, group[0].file);
 
     // wait until YouTube has taken every file
     const until = Date.now() + 60 * 60000;
     let text = "";
     let lastNote = 0;
+    const started = Date.now();
     for (;;) {
       delay(5);
+      if (!uploaded) checkStop(); // nothing uploaded yet: safe to stop
       text = js(id, "document.body.innerText");
       const busy = /uploading\s*\d+\s*%|waiting\b|upload(ing)? (in progress|starting)/i.test(text);
       if (/upload complete|processing|checks complete|uploads complete/i.test(text) && !busy) break;
       if (!uploaded && !/select files|drag and drop/i.test(text)) uploaded = true;
+      if (!uploaded && Date.now() - started > 45000) {
+        // the file window didn't hand over the files: nothing was uploaded
+        throw new Error("The videos weren't picked in the Mac's file window (nothing was uploaded). Close any open file window and run Upload again.");
+      }
       if (Date.now() - lastNote > 60000) {
         lastNote = Date.now();
         const pct = text.match(/uploading\s*\d+\s*%/gi);
