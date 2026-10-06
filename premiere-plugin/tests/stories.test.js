@@ -82,3 +82,11 @@ test("weekly batch: next missing date through Sunday", () => {
   // a gap in the middle of the week is filled too
   assert.deepStrictEqual(r.weekBatch(mon, new Set(["9-28-26", "9-30-26"])), ["9-29-26", "10-01-26", "10-02-26", "10-03-26", "10-04-26"]);
 });
+
+test("titles with words that may get a video held back are flagged", () => {
+  assert.strictEqual(r.flaggedTitleWord("Abused by My Own Mother"), "abused");
+  assert.strictEqual(r.flaggedTitleWord("The Night He Was Killed"), "killed");
+  assert.strictEqual(r.flaggedTitleWord("Abandoned by Both Parents"), "");
+  assert.strictEqual(r.flaggedTitleWord("A Skilled Liar's Last Shot-Glass"), "shot");
+  assert.strictEqual(r.flaggedTitleWord("My Skilled Sister"), "");
+});

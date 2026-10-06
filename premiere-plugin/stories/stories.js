@@ -395,6 +395,8 @@ function makeStory(post, folder, prompt) {
     const title = R.favoriteTitle(ask(id, TITLE_QUESTION));
     if (!title) throw new Error("Couldn't read a title from ChatGPT's answer");
     log(`  title: ${title}`);
+    const flagged = R.flaggedTitleWord(title);
+    if (flagged) log(`  CHECK TITLE: "${title}" has the word "${flagged}", which may get the video held back from recommendations. Change title.txt in ${folder} before making the video if you want.`);
 
     chooseVoice(id, voice);
     const ready = waitForPlayer(id, voice, 180);
@@ -410,7 +412,7 @@ function makeStory(post, folder, prompt) {
     sh(`mkdir -p ${q(dir)} && mv -n ${q(file.path)} ${q(dir + "/")}`);
     writeText(`${dir}/title.txt`, title + "\n");
     log(`  saved ${file.name} and title.txt in ${folder}`);
-    return { title, voice, file: file.name };
+    return { title, voice, file: file.name, flagged };
   } finally {
     closeTab(id);
   }
@@ -445,10 +447,12 @@ function run(argv) {
 
   let made = 0;
   let next = 0;
+  const flaggedTitles = [];
+  const checkTitles = () => (flaggedTitles.length ? ` CHECK TITLES: ${flaggedTitles.join(", ")}.` : "");
   for (const folder of dates) {
     if (exists("/Users/Shared/VidAuto/stop.txt")) {
       log(`STOPPED by you after ${made} of ${count} stories.`);
-      return `Stopped by you after ${made} of ${count} stories.`;
+      return `Stopped by you after ${made} of ${count} stories.${checkTitles()}`;
     }
     let done = false;
     while (!done && next < picked.length) {
@@ -458,11 +462,12 @@ function run(argv) {
         usedData.stories.push({ id: post.id, redditTitle: post.title, url: post.url, folder, title: r.title, voice: r.voice, made: new Date().toISOString() });
         writeText(USED_FILE, JSON.stringify(usedData, null, 2));
         made++;
+        if (r.flagged) flaggedTitles.push(`${folder} ("${r.title}": ${r.flagged})`);
         done = true;
       } catch (e) {
         if (e instanceof LimitReached) {
           log(`STOPPED: ${e.message}. Made ${made} of ${count}. Run again after the limit resets.`);
-          return `Stopped: ChatGPT limit reached after ${made} of ${count} stories.`;
+          return `Stopped: ChatGPT limit reached after ${made} of ${count} stories.${checkTitles()}`;
         }
         log(`  FAILED: ${e.message}. Trying the next story.`);
       }
@@ -472,6 +477,6 @@ function run(argv) {
       break;
     }
   }
-  log(`=== Done: ${made} of ${count} stories ready.`);
-  return `Done: ${made} of ${count} stories ready. Details in ${LOG_FILE}`;
+  log(`=== Done: ${made} of ${count} stories ready.${checkTitles()}`);
+  return `Done: ${made} of ${count} stories ready.${checkTitles()} Details in ${LOG_FILE}`;
 }

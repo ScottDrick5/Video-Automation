@@ -10,6 +10,22 @@ const SKIP_WARNINGS = [
 // Words in a post title that mean it is skipped even without a content-warning line
 const SKIP_TITLE_WORDS = ["murder", "killed", "suicide", "rape", "assault", "stabbed", "shot ", "overdose", "abuse"];
 
+// Words in ChatGPT's title that may get a video treated as mature (fewer recommendations). The title is still
+// used, but it is flagged in the log and the end-of-run message so you can change title.txt first.
+const FLAG_TITLE_WORDS = [
+  "abuse", "abused", "abusive", "assault", "assaulted", "rape", "raped", "molest", "kill", "killed", "killing",
+  "murder", "murdered", "suicide", "dead", "death", "died", "dying", "shot", "shooting", "stab", "stabbed",
+  "overdose", "beat", "beaten", "beating", "blood", "bloody", "violent", "violence", "attack", "attacked",
+  "sex", "sexual", "sexy", "naked", "nude", "porn", "drugs", "drugged", "gun", "weapon", "torture", "kidnap",
+  "kidnapped",
+];
+
+// The first word in a title that should be checked, or "" if none (whole words only: "skilled" isn't "kill")
+function flaggedTitleWord(title) {
+  const words = String(title).toLowerCase().match(/[a-z]+/g) || [];
+  return FLAG_TITLE_WORDS.find((w) => words.includes(w)) || "";
+}
+
 const MIN_WORDS = 1000; // shorter posts don't make a 4-minute reel
 const MAX_WORDS = 7000;
 
@@ -182,6 +198,6 @@ function isLimitMessage(text) {
 if (typeof module !== "undefined") {
   module.exports = {
     SKIP_WARNINGS, MIN_WORDS, MAX_WORDS, cleanPostText, wordCount, contentWarnings, skipReason, pickStories,
-    perspectiveOf, cleanTitle, favoriteTitle, folderName, nextFreeDates, weekBatch, isVoiceoverFile, voiceOfFile, isLimitMessage,
+    FLAG_TITLE_WORDS, flaggedTitleWord, perspectiveOf, cleanTitle, favoriteTitle, folderName, nextFreeDates, weekBatch, isVoiceoverFile, voiceOfFile, isLimitMessage,
   };
 }

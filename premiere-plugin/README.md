@@ -106,7 +106,10 @@ a half-done week gets the rest. (Type a number instead to make exactly that many
    no violent content warnings and is long enough for a 4-8 minute video (only the main post's text is used),
 2. opens a new ChatGPT chat in Chrome and sends your prompt with the story,
 3. reads "Perspective: Male/Female" and picks the voice: Ember (male) or Juniper (female),
-4. asks "Can you give me a good, few-word title for this script?" and takes the one ChatGPT marks as its favorite (⭐),
+4. asks "Can you give me a good, few-word title for this script?" and takes the one ChatGPT marks as its favorite (⭐).
+   If the title has a word that may get the video held back from recommendations (abused, killed, sex, ...), the
+   log says **CHECK TITLE** and the end-of-run message lists those dates; edit that folder's `title.txt` before the
+   video is made if you want a different title (the word list is `FLAG_TITLE_WORDS` in `story-rules.js`),
 5. switches AI Voice Saver's voice if needed (and reloads the page), clicks its download button and waits for the
    file in Downloads,
 6. moves the voiceover into the next date folder that doesn't exist yet (named like 9-28-26 or 10-02-26; it creates
