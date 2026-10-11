@@ -165,17 +165,54 @@ const TURNS_JS = `function turns(role) {
     return [];
   }`;
 
-const STATE_JS = `(function () {
+const STATE_JS = `(function (sentEnd) {
   ${TURNS_JS}
   const msgs = turns("assistant");
   const last = msgs[msgs.length - 1];
+  let text = last ? last.innerText : "";
+  let n = msgs.length;
+  let how = "reply boxes";
+  // Fallback when ChatGPT's reply boxes can't be found: the page text after the end of what we sent
+  if (!n && sentEnd) {
+    const main = (document.querySelector("main") || document.body).innerText;
+    const at = main.lastIndexOf(sentEnd);
+    if (at >= 0) {
+      text = main.slice(at + sentEnd.length).replace(/\\n[^\\n]*(ChatGPT can make mistakes|Ask anything|Message ChatGPT)[\\s\\S]*$/i, "").trim();
+      n = text.length > 20 ? 1 : 0;
+      how = "page text";
+    }
+  }
   const stop = !!document.querySelector('[data-testid="stop-button"], button[aria-label="Stop streaming"], button[aria-label="Stop generating"]');
-  return JSON.stringify({ n: msgs.length, users: turns("user").length, stop, text: last ? last.innerText : "",
+  return JSON.stringify({ n, how, users: turns("user").length, stop, text,
     editor: !!document.querySelector(${JSON.stringify(EDITOR)}), url: location.href, body: document.body.innerText.slice(-1500) });
+})`;
+
+// What the page is made of, saved to a file when the reply can't be found (so the next fix isn't a guess)
+const PAGE_INFO_JS = `(function () {
+  const out = [];
+  for (const a of ["data-message-author-role", "data-turn", "data-testid", "data-message-id"]) {
+    const vals = [...new Set([...document.querySelectorAll("[" + a + "]")].map((e) => e.getAttribute(a)))].slice(0, 40);
+    out.push(a + ": " + vals.join(" | "));
+  }
+  const big = [...document.querySelectorAll("main div, main article, main section")]
+    .filter((e) => e.innerText && e.innerText.length > 400 && e.children.length < 40).slice(-8)
+    .map((e) => e.tagName + " class=" + String(e.className).slice(0, 120) + " attrs=" +
+      [...e.attributes].map((x) => x.name).join(",") + " text=" + e.innerText.slice(0, 80).replace(/\\n/g, " "));
+  return out.join("\\n") + "\\n--- big blocks:\\n" + big.join("\\n") + "\\n--- page ends with:\\n" + document.body.innerText.slice(-1500);
 })()`;
 
-function chatState(id) {
-  return JSON.parse(js(id, STATE_JS) || "{}");
+function chatState(id, sentEnd = "") {
+  return JSON.parse(js(id, `${STATE_JS}(${JSON.stringify(sentEnd)})`) || "{}");
+}
+
+function savePageInfo(id) {
+  const file = AITA_DIR + "/vidauto-chatgpt-page.txt";
+  try {
+    writeText(file, js(id, PAGE_INFO_JS) || "(nothing)");
+    log(`  saved what ChatGPT's page looks like in ${file}; please send that file`);
+  } catch (e) {
+    // only a help for fixing things
+  }
 }
 
 function waitForEditor(id) {
@@ -261,15 +298,24 @@ function ask(id, text) {
   }
 
   // wait for the reply to start...
+  log("  sent; waiting for ChatGPT's reply...");
+  const sentEnd = text.trim().slice(-60).trim();
+  const started = (st) => (st.how === "page text" ? st.n > 0 : st.n > before);
   let end = Date.now() + 120000;
-  let s = chatState(id);
-  while (s.n <= before && Date.now() < end) {
+  let s = chatState(id, sentEnd);
+  let note = Date.now() + 30000;
+  while (!started(s) && Date.now() < end) {
     if (R.isLimitMessage(s.body)) throw new LimitReached("ChatGPT says the message limit was reached");
     wait(2);
-    s = chatState(id);
+    s = chatState(id, sentEnd);
+    if (Date.now() > note) {
+      log(`  still waiting for the reply to show (replies found: ${s.n}, your messages: ${s.users})`);
+      note = Date.now() + 30000;
+    }
   }
-  if (s.n <= before) {
+  if (!started(s)) {
     if (R.isLimitMessage(s.body)) throw new LimitReached("ChatGPT says the message limit was reached");
+    savePageInfo(id);
     const page = String(s.body || "").replace(/\s+/g, " ").trim().slice(-300);
     throw new ChatGPTNotReady(`Couldn't see ChatGPT's reply within 2 minutes (replies found: ${s.n}, your messages: ${s.users}; ` +
       `the page ends with: "${page}")`);
@@ -279,9 +325,10 @@ function ask(id, text) {
   let lastText = "";
   let steady = 0;
   let nextNote = Date.now() + 30000;
+  if (s.how === "page text") log("  (reading the reply from the page text)");
   while (Date.now() < end) {
     wait(2);
-    s = chatState(id);
+    s = chatState(id, sentEnd);
     if (s.text && s.text === lastText) steady++;
     else steady = 0;
     lastText = s.text;
