@@ -29,6 +29,18 @@ class ChatGPTNotReady extends Error {} // ChatGPT's page isn't usable, so every 
 const STOP_FILE = "/Users/Shared/VidAuto/stop.txt"; // the panel's Stop button writes this
 // ChatGPT's message box (they rename it now and then, so several ways of finding it)
 const EDITOR = '#prompt-textarea, textarea[name="prompt-textarea"], div.ProseMirror[contenteditable="true"], form [contenteditable="true"], main form textarea';
+// Page code that finds the message box at the bottom: tries the names in order, and never picks an editable
+// box inside the chat itself (ChatGPT can show the script in an editable "writing block").
+const FIND_EDITOR_JS = `function findEditor() {
+    const names = ${JSON.stringify(EDITOR.split(", "))};
+    const inChat = (e) => e.closest('[data-message-author-role], [data-turn], article, [data-testid^="conversation-turn"]');
+    for (const sel of names) {
+      for (const e of document.querySelectorAll(sel)) {
+        if (!inChat(e) && (e.offsetParent !== null || e.getClientRects().length)) return e;
+      }
+    }
+    return null;
+  }`;
 
 // Like delay(), but stops the run as soon as you press Stop
 function wait(seconds) {
@@ -167,6 +179,7 @@ const TURNS_JS = `function turns(role) {
 
 const STATE_JS = `(function (sentEnd) {
   ${TURNS_JS}
+  ${FIND_EDITOR_JS}
   const msgs = turns("assistant");
   const last = msgs[msgs.length - 1];
   let text = last ? last.innerText : "";
@@ -184,7 +197,7 @@ const STATE_JS = `(function (sentEnd) {
   }
   const stop = !!document.querySelector('[data-testid="stop-button"], button[aria-label="Stop streaming"], button[aria-label="Stop generating"]');
   return JSON.stringify({ n, how, users: turns("user").length, stop, text,
-    editor: !!document.querySelector(${JSON.stringify(EDITOR)}), url: location.href, body: document.body.innerText.slice(-1500) });
+    editor: !!findEditor(), url: location.href, body: document.body.innerText.slice(-1500) });
 })`;
 
 // What the page is made of, saved to a file when the reply can't be found (so the next fix isn't a guess)
@@ -233,7 +246,8 @@ function ask(id, text) {
   showTab(id);
   const before = chatState(id).n || 0;
   const typed = Number(js(id, `(function (text) {
-    const ed = document.querySelector(${JSON.stringify(EDITOR)});
+    ${FIND_EDITOR_JS}
+    const ed = findEditor();
     if (!ed) return "-1";
     ed.focus();
     if (ed.tagName === "TEXTAREA") {
@@ -248,7 +262,8 @@ function ask(id, text) {
   if (typed < text.length * 0.8) {
     // fall back to pasting
     js(id, `(function (text) {
-      const ed = document.querySelector(${JSON.stringify(EDITOR)});
+      ${FIND_EDITOR_JS}
+    const ed = findEditor();
       ed.focus();
       const dt = new DataTransfer();
       dt.setData("text/plain", text);
@@ -274,7 +289,8 @@ function ask(id, text) {
     })()`);
     if (sent === "no button" && i >= 2) {
       js(id, `(function () {
-        const ed = document.querySelector(${JSON.stringify(EDITOR)});
+        ${FIND_EDITOR_JS}
+    const ed = findEditor();
         if (!ed) return;
         ed.focus();
         for (const type of ["keydown", "keypress", "keyup"]) {
@@ -288,7 +304,8 @@ function ask(id, text) {
   }
   if (sent !== "sent") {
     const info = js(id, `(function () {
-      const ed = document.querySelector(${JSON.stringify(EDITOR)});
+      ${FIND_EDITOR_JS}
+    const ed = findEditor();
       const labels = [...document.querySelectorAll("form button, footer button, [class*=composer] button")]
         .map((b) => b.getAttribute("data-testid") || b.getAttribute("aria-label") || b.innerText.trim()).filter(Boolean).slice(0, 15);
       return "message box: " + (ed ? ed.tagName.toLowerCase() + (ed.id ? "#" + ed.id : "") + " with " + (ed.value || ed.innerText || "").length +
