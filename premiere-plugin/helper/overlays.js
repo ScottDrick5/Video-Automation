@@ -28,13 +28,13 @@ const STYLE = {
   arrowWeight: "Regular",
   arrowTextSize: 50,
   arrowLines: ["Follow For More", "Videos!!"],
-  arrowLeft: 273,
-  arrowShaftRight: 745,
-  arrowTip: 915,
-  arrowCenterY: 1103,
+  arrowLeft: 296,
+  arrowShaftRight: 768,
+  arrowTip: 938,
+  arrowCenterY: 1016, // level with the profile picture on TikTok's right side
   arrowShaftHeight: 141,
   arrowHeadHeight: 230,
-  arrowTextCenterX: 542,
+  arrowTextCenterX: 565,
   arrowShine: 1,
 };
 
