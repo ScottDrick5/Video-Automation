@@ -196,6 +196,11 @@ const STATE_JS = `(function (sentEnd) {
   if (!n && sentEnd) {
     const main = (document.querySelector("main") || document.body).innerText;
     const at = main.lastIndexOf(sentEnd);
+    if (at < 0 && !window.__vaExpanded) {
+      // a long message is shown cut short with "Show more": open it so its end can be found
+      window.__vaExpanded = true;
+      for (const b of document.querySelectorAll("main button")) if (/^show more$/i.test(b.innerText.trim())) b.click();
+    }
     if (at >= 0) {
       text = main.slice(at + sentEnd.length).replace(/\\n[^\\n]*(ChatGPT can make mistakes|Ask anything|Message ChatGPT)[\\s\\S]*$/i, "").trim();
       n = text.length > 20 ? 1 : 0;
@@ -249,8 +254,10 @@ function waitForEditor(id) {
 }
 
 // Send a message and return ChatGPT's complete reply.
-function ask(id, text) {
+// ready(reply) says whether the reply is the real answer (not "Thinking..."); ask keeps waiting until it is.
+function ask(id, text, ready) {
   showTab(id);
+  js(id, "window.__vaExpanded = false; 'ok'");
   const before = chatState(id).n || 0;
   const typed = Number(js(id, `(function (text) {
     ${FIND_EDITOR_JS}
@@ -332,10 +339,16 @@ function ask(id, text) {
   let end = Date.now() + 120000;
   let s = chatState(id, sentEnd);
   let note = Date.now() + 30000;
+  const infoAt = Date.now() + 45000;
+  let infoSaved = false;
   while (!started(s) && Date.now() < end) {
     if (R.isLimitMessage(s.body)) throw new LimitReached("ChatGPT says the message limit was reached");
     wait(2);
     s = chatState(id, sentEnd);
+    if (!infoSaved && Date.now() > infoAt) {
+      savePageInfo(id);
+      infoSaved = true;
+    }
     if (Date.now() > note) {
       log(`  still waiting for the reply to show (replies found: ${s.n}, your messages: ${s.users})`);
       note = Date.now() + 30000;
@@ -343,7 +356,7 @@ function ask(id, text) {
   }
   if (!started(s)) {
     if (R.isLimitMessage(s.body)) throw new LimitReached("ChatGPT says the message limit was reached");
-    savePageInfo(id);
+    if (!infoSaved) savePageInfo(id);
     const page = String(s.body || "").replace(/\s+/g, " ").trim().slice(-300);
     throw new ChatGPTNotReady(`Couldn't see ChatGPT's reply within 2 minutes (replies found: ${s.n}, your messages: ${s.users}; ` +
       `the page ends with: "${page}")`);
@@ -360,7 +373,7 @@ function ask(id, text) {
     if (s.text && s.text === lastText) steady++;
     else steady = 0;
     lastText = s.text;
-    if (steady >= (s.stop ? 10 : 3)) break;
+    if (steady >= (s.stop ? 10 : 3) && (!ready || ready(lastText) || steady >= 60)) break;
     if (Date.now() > nextNote) {
       log(`  ChatGPT is writing... (${lastText.length} characters so far)`);
       nextNote = Date.now() + 30000;
@@ -368,6 +381,9 @@ function ask(id, text) {
   }
   if (R.isLimitMessage(lastText)) throw new LimitReached("ChatGPT says the message limit was reached");
   if (!lastText) throw new Error("ChatGPT's reply was empty");
+  if (ready && !ready(lastText)) {
+    throw new Error(`ChatGPT's reply doesn't look finished: "${lastText.replace(/\s+/g, " ").slice(0, 150)}"`);
+  }
   return lastText;
 }
 
@@ -523,14 +539,14 @@ function makeStory(post, folder, prompt) {
   try {
     waitForEditor(id);
     log(`  sending your prompt with the story (${R.wordCount(story)} words)...`);
-    const script = ask(id, `${prompt}\n\n${post.title}\n\n${story}`);
+    const script = ask(id, `${prompt}\n\n${post.title}\n\n${story}`, (t) => !!R.perspectiveOf(t));
     const who = R.perspectiveOf(script);
     if (!who) throw new Error('ChatGPT\'s reply has no "Perspective: Male/Female" line');
     const voice = VOICES[who];
     log(`  script written; perspective ${who}, so the voice is ${voice}`);
 
     log("  asking for a title...");
-    const title = R.favoriteTitle(ask(id, TITLE_QUESTION));
+    const title = R.favoriteTitle(ask(id, TITLE_QUESTION, (t) => !!R.favoriteTitle(t)));
     if (!title) throw new Error("Couldn't read a title from ChatGPT's answer");
     log(`  title: ${title}`);
     const flagged = R.flaggedTitleWord(title);
@@ -572,7 +588,7 @@ function run(argv) {
   const dates = asked ? R.nextFreeDates(new Date(), taken, asked) : R.weekBatch(new Date(), taken);
   const count = dates.length;
 
-  log("(Get Stories version 10-11c)");
+  log("(Get Stories version 10-11d)");
   log(`=== Getting ${count} stor${count === 1 ? "y" : "ies"} for ${dates.join(", ")}`);
   let posts;
   try {
