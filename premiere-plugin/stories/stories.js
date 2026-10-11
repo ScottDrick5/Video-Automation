@@ -207,18 +207,46 @@ function ask(id, text) {
     })(${JSON.stringify(text)})`);
   }
   wait(1.5);
+  // Press the send button; ChatGPT renames it now and then, so look for any button that says "send". If there
+  // isn't one, press Enter in the message box. Sent = your message shows up in the chat.
+  const userCount = () => Number(js(id, `String(document.querySelectorAll('[data-message-author-role="user"]').length)`)) || 0;
+  const usersBefore = userCount();
   let sent = "";
   for (let i = 0; i < 10 && sent !== "sent"; i++) {
     sent = js(id, `(function () {
-      const b = document.querySelector('[data-testid="send-button"], #composer-submit-button, button[aria-label="Send prompt"]');
+      const all = [...document.querySelectorAll("button")];
+      const say = (b) => ((b.getAttribute("data-testid") || "") + " " + (b.getAttribute("aria-label") || "") + " " + (b.id || "")).toLowerCase();
+      const b = document.querySelector('[data-testid="send-button"], #composer-submit-button, button[aria-label="Send prompt"]') ||
+        all.find((x) => /send|submit/.test(say(x)) && !/voice|dictat|feedback/.test(say(x)));
       if (!b) return "no button";
       if (b.disabled) return "disabled";
       b.click();
       return "sent";
     })()`);
+    if (sent === "no button" && i >= 2) {
+      js(id, `(function () {
+        const ed = document.querySelector(${JSON.stringify(EDITOR)});
+        if (!ed) return;
+        ed.focus();
+        for (const type of ["keydown", "keypress", "keyup"]) {
+          ed.dispatchEvent(new KeyboardEvent(type, { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+        }
+      })()`);
+      wait(2);
+      if (userCount() > usersBefore) sent = "sent";
+    }
     if (sent !== "sent") wait(1);
   }
-  if (sent !== "sent") throw new Error(`Couldn't press ChatGPT's send button (${sent})`);
+  if (sent !== "sent") {
+    const info = js(id, `(function () {
+      const ed = document.querySelector(${JSON.stringify(EDITOR)});
+      const labels = [...document.querySelectorAll("form button, footer button, [class*=composer] button")]
+        .map((b) => b.getAttribute("data-testid") || b.getAttribute("aria-label") || b.innerText.trim()).filter(Boolean).slice(0, 15);
+      return "message box: " + (ed ? ed.tagName.toLowerCase() + (ed.id ? "#" + ed.id : "") + " with " + (ed.value || ed.innerText || "").length +
+        " characters typed" : "none") + "; buttons near it: " + (labels.join(", ") || "none");
+    })()`);
+    throw new ChatGPTNotReady(`Couldn't press ChatGPT's send button (${sent}; ${info})`);
+  }
 
   // wait for the reply to start...
   let end = Date.now() + 120000;
