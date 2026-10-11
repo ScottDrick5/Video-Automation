@@ -33,13 +33,20 @@ const EDITOR = '#prompt-textarea, textarea[name="prompt-textarea"], div.ProseMir
 // box inside the chat itself (ChatGPT can show the script in an editable "writing block").
 const FIND_EDITOR_JS = `function findEditor() {
     const names = ${JSON.stringify(EDITOR.split(", "))};
-    const inChat = (e) => e.closest('[data-message-author-role], [data-turn], article, [data-testid^="conversation-turn"]');
-    for (const sel of names) {
-      for (const e of document.querySelectorAll(sel)) {
-        if (!inChat(e) && (e.offsetParent !== null || e.getClientRects().length)) return e;
-      }
+    const inChat = (e) => e.closest('[data-message-author-role], [data-turn], article, [data-testid^="conversation-turn"], [class*="canvas" i], [class*="writing" i]');
+    const seen = new Set();
+    const boxes = [];
+    for (const sel of names) for (const e of document.querySelectorAll(sel)) {
+      if (seen.has(e) || !e.getClientRects().length) continue;
+      seen.add(e);
+      boxes.push(e);
     }
-    return null;
+    // The "Ask anything" box is the lowest one on the screen; script blocks in the chat are above it
+    const lowest = (list) => list.sort((x, y) => y.getBoundingClientRect().bottom - x.getBoundingClientRect().bottom)[0] || null;
+    const ask = boxes.filter((e) => /ask anything|message chatgpt/i.test((e.getAttribute("aria-label") || "") + " " +
+      (e.getAttribute("placeholder") || "") + " " + (e.getAttribute("data-placeholder") || "") +
+      " " + ((e.querySelector("[data-placeholder]") || {}).getAttribute ? e.querySelector("[data-placeholder]").getAttribute("data-placeholder") : "")));
+    return lowest(ask) || lowest(boxes.filter((e) => !inChat(e))) || lowest(boxes);
   }`;
 
 // Like delay(), but stops the run as soon as you press Stop
@@ -257,8 +264,12 @@ function ask(id, text) {
       document.execCommand("selectAll", false, null);
       document.execCommand("insertText", false, text);
     }
+    const r = ed.getBoundingClientRect();
+    window.__vaBox = ed.tagName.toLowerCase() + (ed.id ? "#" + ed.id : "") + " at " + Math.round(r.top) + "-" + Math.round(r.bottom) +
+      " of " + window.innerHeight;
     return String((ed.value || ed.innerText || "").length);
   })(${JSON.stringify(text)})`));
+  log(`  typed into: ${js(id, "window.__vaBox || ''")}`);
   if (typed < text.length * 0.8) {
     // fall back to pasting
     js(id, `(function (text) {
@@ -561,6 +572,7 @@ function run(argv) {
   const dates = asked ? R.nextFreeDates(new Date(), taken, asked) : R.weekBatch(new Date(), taken);
   const count = dates.length;
 
+  log("(Get Stories version 10-11c)");
   log(`=== Getting ${count} stor${count === 1 ? "y" : "ies"} for ${dates.join(", ")}`);
   let posts;
   try {
