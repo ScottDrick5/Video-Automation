@@ -23,6 +23,18 @@ let R = null; // story-rules.js
 const chrome = Application("Google Chrome");
 
 class LimitReached extends Error {}
+class StopRequested extends Error {}
+class ChatGPTNotReady extends Error {} // ChatGPT's page isn't usable, so every story would fail the same way
+
+const STOP_FILE = "/Users/Shared/VidAuto/stop.txt"; // the panel's Stop button writes this
+// ChatGPT's message box (they rename it now and then, so several ways of finding it)
+const EDITOR = '#prompt-textarea, textarea[name="prompt-textarea"], div.ProseMirror[contenteditable="true"], form [contenteditable="true"], main form textarea';
+
+// Like delay(), but stops the run as soon as you press Stop
+function wait(seconds) {
+  if (exists(STOP_FILE)) throw new StopRequested("Stopped by you");
+  delay(seconds);
+}
 
 // ------------------------------------------------------------------ small helpers
 
@@ -95,9 +107,9 @@ function closeTab(id) {
 
 function waitLoaded(id, seconds = 60) {
   const end = Date.now() + seconds * 1000;
-  delay(1);
-  while (Date.now() < end && findTab(id).t.loading()) delay(0.5);
-  delay(1);
+  wait(1);
+  while (Date.now() < end && findTab(id).t.loading()) wait(0.5);
+  wait(1);
 }
 
 // Run JavaScript in the tab; the code's value comes back as a string.
@@ -113,7 +125,7 @@ function jsAsync(id, fnSource, seconds = 60) {
     (e) => { window.__vaR = JSON.stringify({ err: String(e) }); }); "started"`);
   const end = Date.now() + seconds * 1000;
   while (Date.now() < end) {
-    delay(1);
+    wait(1);
     const r = js(id, "window.__vaR || ''");
     if (r) {
       const o = JSON.parse(r);
@@ -147,7 +159,7 @@ const STATE_JS = `(function () {
   const last = msgs[msgs.length - 1];
   const stop = !!document.querySelector('[data-testid="stop-button"], button[aria-label*="Stop" i]');
   return JSON.stringify({ n: msgs.length, stop, text: last ? last.innerText : "",
-    editor: !!document.querySelector("#prompt-textarea"), body: document.body.innerText.slice(-1500) });
+    editor: !!document.querySelector(${JSON.stringify(EDITOR)}), url: location.href, body: document.body.innerText.slice(-1500) });
 })()`;
 
 function chatState(id) {
@@ -156,11 +168,15 @@ function chatState(id) {
 
 function waitForEditor(id) {
   const end = Date.now() + 60000;
+  let st = {};
   while (Date.now() < end) {
-    if (chatState(id).editor) return;
-    delay(1);
+    st = chatState(id);
+    if (st.editor) return;
+    wait(1);
   }
-  throw new Error("ChatGPT's message box didn't appear. Are you signed in to chatgpt.com in Chrome?");
+  const page = String(st.body || "").replace(/\s+/g, " ").trim().slice(0, 300);
+  throw new ChatGPTNotReady(`ChatGPT's message box didn't appear (page: ${st.url || "?"}; it shows: "${page}"). ` +
+    "Check that you're signed in to chatgpt.com in Chrome and that no pop-up is covering the page");
 }
 
 // Send a message and return ChatGPT's complete reply.
@@ -168,7 +184,7 @@ function ask(id, text) {
   showTab(id);
   const before = chatState(id).n || 0;
   const typed = Number(js(id, `(function (text) {
-    const ed = document.querySelector("#prompt-textarea");
+    const ed = document.querySelector(${JSON.stringify(EDITOR)});
     if (!ed) return "-1";
     ed.focus();
     if (ed.tagName === "TEXTAREA") {
@@ -183,14 +199,14 @@ function ask(id, text) {
   if (typed < text.length * 0.8) {
     // fall back to pasting
     js(id, `(function (text) {
-      const ed = document.querySelector("#prompt-textarea");
+      const ed = document.querySelector(${JSON.stringify(EDITOR)});
       ed.focus();
       const dt = new DataTransfer();
       dt.setData("text/plain", text);
       ed.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
     })(${JSON.stringify(text)})`);
   }
-  delay(1.5);
+  wait(1.5);
   let sent = "";
   for (let i = 0; i < 10 && sent !== "sent"; i++) {
     sent = js(id, `(function () {
@@ -200,7 +216,7 @@ function ask(id, text) {
       b.click();
       return "sent";
     })()`);
-    if (sent !== "sent") delay(1);
+    if (sent !== "sent") wait(1);
   }
   if (sent !== "sent") throw new Error(`Couldn't press ChatGPT's send button (${sent})`);
 
@@ -209,7 +225,7 @@ function ask(id, text) {
   let s = chatState(id);
   while (s.n <= before && Date.now() < end) {
     if (R.isLimitMessage(s.body)) throw new LimitReached("ChatGPT says the message limit was reached");
-    delay(2);
+    wait(2);
     s = chatState(id);
   }
   if (s.n <= before) {
@@ -221,7 +237,7 @@ function ask(id, text) {
   let lastText = "";
   let steady = 0;
   while (Date.now() < end) {
-    delay(2);
+    wait(2);
     s = chatState(id);
     if (!s.stop && s.text && s.text === lastText) steady++;
     else steady = 0;
@@ -249,7 +265,7 @@ const PLAYER_JS = `
   function findPlayer() {
     const all = everything(document);
     for (const e of all) {
-      if (e.closest && e.closest("#prompt-textarea")) continue;
+      if (e.closest && e.closest(${JSON.stringify(EDITOR)})) continue;
       let voice = null;
       if (e.tagName === "SELECT") {
         const opt = [...e.options].find((o) => VOICES.includes(o.text.trim()));
@@ -286,7 +302,7 @@ function waitForPlayer(id, voice, seconds) {
   while (Date.now() < end) {
     p = playerInfo(id);
     if (p && (!voice || p.voice === voice)) return p;
-    delay(2);
+    wait(2);
   }
   return p;
 }
@@ -312,7 +328,7 @@ function chooseVoice(id, voice) {
     return "opened";
   })(${JSON.stringify(voice)})`);
   if (first === "opened") {
-    delay(1);
+    wait(1);
     const picked = js(id, `(function (want) { ${PLAYER_JS}
       const p = findPlayer();
       const choice = everything(document).find((e) => e !== (p && p.el) && e.children.length === 0 &&
@@ -325,7 +341,7 @@ function chooseVoice(id, voice) {
   } else if (first !== "set") {
     throw new Error(`Couldn't change the voice (${first})`);
   }
-  delay(1);
+  wait(1);
   js(id, "location.reload(); 'ok'");
   waitLoaded(id);
   p = waitForPlayer(id, voice, 120);
@@ -364,7 +380,7 @@ function waitForDownload(sinceSeconds, seconds = 300) {
   let last = null;
   let steady = 0;
   while (Date.now() < end) {
-    delay(2);
+    wait(2);
     const fresh = voiceoverFiles().filter((f) => f.mtime >= sinceSeconds - 5).sort((a, b) => b.mtime - a.mtime)[0];
     if (!fresh || fresh.size === 0) continue;
     if (last && last.path === fresh.path && last.size === fresh.size) steady++;
@@ -450,7 +466,7 @@ function run(argv) {
   const flaggedTitles = [];
   const checkTitles = () => (flaggedTitles.length ? ` CHECK TITLES: ${flaggedTitles.join(", ")}.` : "");
   for (const folder of dates) {
-    if (exists("/Users/Shared/VidAuto/stop.txt")) {
+    if (exists(STOP_FILE)) {
       log(`STOPPED by you after ${made} of ${count} stories.`);
       return `Stopped by you after ${made} of ${count} stories.${checkTitles()}`;
     }
@@ -465,6 +481,14 @@ function run(argv) {
         if (r.flagged) flaggedTitles.push(`${folder} ("${r.title}": ${r.flagged})`);
         done = true;
       } catch (e) {
+        if (e instanceof StopRequested) {
+          log(`STOPPED by you after ${made} of ${count} stories.`);
+          return `Stopped by you after ${made} of ${count} stories.${checkTitles()}`;
+        }
+        if (e instanceof ChatGPTNotReady) {
+          log(`STOPPED: ${e.message}. Made ${made} of ${count}.`);
+          return `Stopped: ChatGPT wasn't ready (see the log) after ${made} of ${count} stories.${checkTitles()}`;
+        }
         if (e instanceof LimitReached) {
           log(`STOPPED: ${e.message}. Made ${made} of ${count}. Run again after the limit resets.`);
           return `Stopped: ChatGPT limit reached after ${made} of ${count} stories.${checkTitles()}`;

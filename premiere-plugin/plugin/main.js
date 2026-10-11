@@ -46,7 +46,7 @@ const ARROW_TRACK = 2; // V3
 const ARROW_SECONDS = 5;
 const CLIP_ARROW_AT = 5; // seconds into each clip
 const TICKS_PER_SECOND = 254016000000;
-const PLUGIN_VERSION = "0.8.1";
+const PLUGIN_VERSION = "0.8.2";
 
 const state = { clip: null, transcript: null, cut: null, sequence: null };
 
@@ -1143,11 +1143,18 @@ async function getStories(count = 0) {
   await startHelper("stories");
   const t0 = Date.now();
   let helperLog = "";
+  let stopAt = 0;
   while (Date.now() - t0 < 5 * 3600 * 1000) {
     await new Promise((r) => setTimeout(r, 5000));
     await copyNewLines();
     helperLog = (await readTextFile(HELPER_LOG)) || "";
     if (/RESULT|ERROR/.test(helperLog)) break;
+    // after Stop, give Get Stories a minute to finish its step; don't wait for it longer than that
+    if (state.stopRequested && !stopAt) stopAt = Date.now();
+    if (stopAt && Date.now() - stopAt > 60000) {
+      helperLog = "RESULT: Stopped by you";
+      break;
+    }
   }
   await copyNewLines();
   const result = (helperLog.match(/(RESULT|ERROR)[^\n]*/) || ["no result from the helper"])[0];
