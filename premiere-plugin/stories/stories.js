@@ -154,11 +154,23 @@ function redditPosts() {
 
 // ------------------------------------------------------------------ ChatGPT
 
+// ChatGPT's messages (they rename these now and then, so several ways of finding them)
+const TURNS_JS = `function turns(role) {
+    for (const sel of ['[data-message-author-role="' + role + '"]', '[data-turn="' + role + '"]',
+      'article[data-testid^="conversation-turn"] [data-message-author-role="' + role + '"]']) {
+      const found = [...document.querySelectorAll(sel)];
+      if (found.length) return found;
+    }
+    if (role === "assistant") return [...document.querySelectorAll(".agent-turn, .markdown.prose")];
+    return [];
+  }`;
+
 const STATE_JS = `(function () {
-  const msgs = [...document.querySelectorAll('[data-message-author-role="assistant"]')];
+  ${TURNS_JS}
+  const msgs = turns("assistant");
   const last = msgs[msgs.length - 1];
-  const stop = !!document.querySelector('[data-testid="stop-button"], button[aria-label*="Stop" i]');
-  return JSON.stringify({ n: msgs.length, stop, text: last ? last.innerText : "",
+  const stop = !!document.querySelector('[data-testid="stop-button"], button[aria-label="Stop streaming"], button[aria-label="Stop generating"]');
+  return JSON.stringify({ n: msgs.length, users: turns("user").length, stop, text: last ? last.innerText : "",
     editor: !!document.querySelector(${JSON.stringify(EDITOR)}), url: location.href, body: document.body.innerText.slice(-1500) });
 })()`;
 
@@ -209,7 +221,7 @@ function ask(id, text) {
   wait(1.5);
   // Press the send button; ChatGPT renames it now and then, so look for any button that says "send". If there
   // isn't one, press Enter in the message box. Sent = your message shows up in the chat.
-  const userCount = () => Number(js(id, `String(document.querySelectorAll('[data-message-author-role="user"]').length)`)) || 0;
+  const userCount = () => chatState(id).users || 0;
   const usersBefore = userCount();
   let sent = "";
   for (let i = 0; i < 10 && sent !== "sent"; i++) {
@@ -258,19 +270,26 @@ function ask(id, text) {
   }
   if (s.n <= before) {
     if (R.isLimitMessage(s.body)) throw new LimitReached("ChatGPT says the message limit was reached");
-    throw new Error("ChatGPT didn't start replying within 2 minutes");
+    const page = String(s.body || "").replace(/\s+/g, " ").trim().slice(-300);
+    throw new ChatGPTNotReady(`Couldn't see ChatGPT's reply within 2 minutes (replies found: ${s.n}, your messages: ${s.users}; ` +
+      `the page ends with: "${page}")`);
   }
-  // ...and to finish (not writing any more, text unchanged for a few seconds)
+  // ...and to finish (not writing any more: text unchanged for 6 seconds, or 20 seconds if a Stop button still shows)
   end = Date.now() + 10 * 60000;
   let lastText = "";
   let steady = 0;
+  let nextNote = Date.now() + 30000;
   while (Date.now() < end) {
     wait(2);
     s = chatState(id);
-    if (!s.stop && s.text && s.text === lastText) steady++;
+    if (s.text && s.text === lastText) steady++;
     else steady = 0;
     lastText = s.text;
-    if (steady >= 3) break;
+    if (steady >= (s.stop ? 10 : 3)) break;
+    if (Date.now() > nextNote) {
+      log(`  ChatGPT is writing... (${lastText.length} characters so far)`);
+      nextNote = Date.now() + 30000;
+    }
   }
   if (R.isLimitMessage(lastText)) throw new LimitReached("ChatGPT says the message limit was reached");
   if (!lastText) throw new Error("ChatGPT's reply was empty");
