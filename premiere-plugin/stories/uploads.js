@@ -1,34 +1,3 @@
-    // back to the top of the form (it stays scrolled down from the Tags), then choose the "Schedule" option next
-    // to "Share now": the "Schedule" words closest under the "Scheduling options" heading (never the
-    // "Schedule" button at the bottom, which would post at whatever time is showing)
-    js(id, `(function () {
-      for (const e of document.querySelectorAll("div")) if (e.scrollTop > 0) e.scrollTop = 0;
-      window.scrollTo(0, 0);
-    })()`);
-    delay(1);
-    let w = fbWhen(id);
-    if (w.date === null || w.time === null) {
-      const r = js(id, `(function () {
-        const vis = (e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; };
-        const say = (e) => (e.innerText || e.textContent || "").trim();
-        const head = [...document.querySelectorAll("span, div, h2, h3")].find((e) => vis(e) && !e.children.length && say(e) === "Scheduling options");
-        if (!head) return "no heading";
-        const top = head.getBoundingClientRect().top;
-        const opts = [...document.querySelectorAll("span, div, label, button, [role]")]
-          .filter((e) => vis(e) && say(e) === "Schedule" && ![...e.children].some((c) => say(c) === "Schedule"))
-          .map((e) => ({ e, dy: e.getBoundingClientRect().top - top }))
-          .filter((o) => o.dy > 0 && o.dy < 250)
-          .sort((a, b) => a.dy - b.dy);
-        if (!opts.length) return "no option";
-        const e = opts[0].e;
-        const radio = e.closest("label") && e.closest("label").querySelector('input[type="radio"]');
-        (radio || e.closest('[role="radio"], [role="tab"], button, [role="button"], label') || e).click();
-        return "clicked";
-      })()`);
-      if (r !== "clicked") throw new Error(`Couldn't choose the "Schedule" option (${r})${dump(id)}`);
-      delay(1.5);
-      w = fbWhen(id);
-    }
 // VidAuto Upload: schedules the finished videos on YouTube (TikTok and Facebook come next).
 // Runs on the Mac (JavaScript for Automation). It drives YouTube Studio in your signed-in Chrome; to pick the
 // video file it clicks the site's "Select files" button and types the file's location into the Mac's file window,
@@ -802,17 +771,37 @@ function facebook(item, review) {
       delay(3);
     }
     waitFor(id, ["text:Scheduling options"], 30, 'The "Scheduling options" step');
-    // choose the "Schedule" option (next to "Share now") unless its date and time boxes already show. Only click
-    // it when the bottom "Schedule" button is there too, so the top one is surely the option, not the button.
+    // back to the top of the form (it stays scrolled down from the Tags), then choose the "Schedule" option next
+    // to "Share now": the "Schedule" words closest under the "Scheduling options" heading (never the
+    // "Schedule" button at the bottom, which would post at whatever time is showing)
+    js(id, `(function () {
+      for (const e of document.querySelectorAll("div")) if (e.scrollTop > 0) e.scrollTop = 0;
+      window.scrollTo(0, 0);
+    })()`);
+    delay(1);
     let w = fbWhen(id);
     if (w.date === null || w.time === null) {
-      const count = Number(js(id, `String([...document.querySelectorAll('button, [role="button"], [role="tab"], [role="radio"]')]
-        .filter((b) => b.getBoundingClientRect().width > 0 && (b.innerText || "").trim() === "Schedule").length)`));
-      if (count < 2 || !fbButton(id, "Schedule", false)) throw new Error(`Couldn't choose the "Schedule" option${dump(id)}`);
+      const r = js(id, `(function () {
+        const vis = (e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; };
+        const say = (e) => (e.innerText || e.textContent || "").trim();
+        const head = [...document.querySelectorAll("span, div, h2, h3")].find((e) => vis(e) && !e.children.length && say(e) === "Scheduling options");
+        if (!head) return "no heading";
+        const top = head.getBoundingClientRect().top;
+        const opts = [...document.querySelectorAll("span, div, label, button, [role]")]
+          .filter((e) => vis(e) && say(e) === "Schedule" && ![...e.children].some((c) => say(c) === "Schedule"))
+          .map((e) => ({ e, dy: e.getBoundingClientRect().top - top }))
+          .filter((o) => o.dy > 0 && o.dy < 250)
+          .sort((a, b) => a.dy - b.dy);
+        if (!opts.length) return "no option";
+        const e = opts[0].e;
+        const radio = e.closest("label") && e.closest("label").querySelector('input[type="radio"]');
+        (radio || e.closest('[role="radio"], [role="tab"], button, [role="button"], label') || e).click();
+        return "clicked";
+      })()`);
+      if (r !== "clicked") throw new Error(`Couldn't choose the "Schedule" option (${r})${dump(id)}`);
       delay(1.5);
       w = fbWhen(id);
     }
-
     const day = U.studioDate(item.when);
     const time = fbTime(item.when);
     if (w.date === null || w.time === null) throw new Error(`Couldn't find the schedule's date and time boxes${dump(id)}`);
