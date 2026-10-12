@@ -339,6 +339,11 @@ end makeOverlays
 -- Convert a source video into a Premiere-friendly copy (standard 8-bit H.264, same size) with macOS's own
 -- converter. /Users/Shared/VidAuto/convert-job.txt holds the source path and the copy's path. The copy is
 -- written under a temporary name and renamed when complete, so a half-finished file is never used.
+-- "Mincraft 10-12-26" from "/.../Mincraft 10-12-26.mp4"
+on baseName(p)
+	return do shell script "basename " & quoted form of p & " | sed 's/\\.[^.]*$//'"
+end baseName
+
 on convertVideo()
 	do shell script "mkdir -p /Users/Shared/VidAuto && : > " & quoted form of logPath
 	set progressPath to "/Users/Shared/VidAuto/convert-progress.txt"
@@ -349,6 +354,10 @@ on convertVideo()
 		set tmpPath to (text 1 thru -5 of outPath) & " (converting).mp4"
 		logLine("Converting " & inPath)
 		do shell script "mkdir -p \"$(dirname " & quoted form of outPath & ")\""
+		-- an unfinished conversion of this video from an earlier run (stopped, or still going): end it and
+		-- delete its half-made file, so only one conversion runs and nothing half-made is left behind
+		do shell script "pkill -f " & quoted form of ("avconvert --source " & inPath) & " ; sleep 1 ; true"
+		do shell script "rm -f \"$(dirname " & quoted form of outPath & ")\"/" & quoted form of (my baseName(inPath)) & "\\ \\(*\\)\\ \\(converting\\).mp4 ; true"
 		do shell script "/usr/bin/avconvert --source " & quoted form of inPath & " --output " & quoted form of tmpPath & " --preset PresetHighestQuality --replace --progress > " & quoted form of progressPath & " 2>&1 && mv -f " & quoted form of tmpPath & " " & quoted form of outPath
 		logLine("RESULT: converted")
 	on error errMsg number errNum
