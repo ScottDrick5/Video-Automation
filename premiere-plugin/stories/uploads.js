@@ -684,78 +684,70 @@ function fbSetWhen(id, which, text, kind) {
   delay(0.8);
 }
 
-// The date: first type it (and leave the box with Tab, which keeps it; Escape can undo it). If the box doesn't
-// take typing, open its calendar and click the day (moving to the next month if needed).
-function fbSetDate(id, ms, w) {
-  const text = dateLike(w.date, ms);
-  if (w.dateKind === "input") {
-    // type it and press Return (that's what keeps it; leaving with Tab or Escape puts the old date back)
-    realClick(id, ['input[data-vidauto="date"]'], "the date box");
-    delay(0.6);
-    keys.keystroke("a", { using: "command down" });
-    delay(0.2);
-    keys.keystroke(text);
-    delay(0.6);
-    keys.keyCode(36); // Return
-    delay(1.5);
-    const now = fbWhen(id);
-    if (sameDay(now.date, ms)) return;
-    log(`  (typing the date didn't stick: it shows ${now.date}; trying its calendar)`);
-  }
+// The date. Typing into Business Suite's date box only changes what it shows (it goes back to the old date as
+// soon as anything else is touched), so open its calendar and click the day with the real mouse, which does stick.
+function fbSetDate(id, ms) {
   const d = new Date(ms);
   const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-  fbWhen(id); // marks the date box again
-  realClick(id, ['[data-vidauto="date"]'], "the date box");
-  delay(1.2);
-  for (let tries = 0; tries < 3; tries++) {
+  for (let tries = 0; tries < 4; tries++) {
+    fbWhen(id); // marks the date box
+    if (!has(id, ['[data-vidauto="date"]'])) throw new Error(`Couldn't find the date box${dump(id)}`);
+    if (tries === 0) {
+      realClick(id, ['[data-vidauto="date"]'], "the date box");
+      delay(1.5);
+    }
     const r = js(id, `(function () {
       const vis = (e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; };
+      const say = (e) => (e.innerText || "").trim();
+      for (const e of document.querySelectorAll('[data-vidauto="day"]')) e.removeAttribute("data-vidauto");
       const month = ${JSON.stringify(MONTHS[d.getMonth()])}, year = ${JSON.stringify(String(d.getFullYear()))}, day = ${JSON.stringify(String(d.getDate()))};
-      // a day cell named with the whole date, e.g. "October 13, 2026" or "Tuesday, October 13, 2026"
-      const named = [...document.querySelectorAll("[aria-label]")].find((e) => vis(e) &&
-        new RegExp("\\\\b" + month + " " + day + ",? " + year).test(e.getAttribute("aria-label")));
-      if (named) { (named.closest("button, [role=button], [role=gridcell], td") || named).click(); return "clicked"; }
-      // otherwise: the calendar's heading says the month, then click the day number in its grid
-      const heading = [...document.querySelectorAll("span, div, h2, h3")].find((e) => vis(e) && !e.children.length &&
-        new RegExp("^" + month + ",? " + year + "$").test((e.innerText || "").trim()));
-      if (!heading) return "other month";
-      let cal = heading.parentElement;
-      while (cal && !cal.querySelector("table, [role=grid]")) cal = cal.parentElement;
-      if (!cal) return "no grid";
-      const cell = [...cal.querySelectorAll("table td, [role=gridcell], [role=grid] button")].find((e) => vis(e) &&
-        (e.innerText || "").trim() === day && !/disabled|outside/i.test(e.className + " " + (e.getAttribute("aria-disabled") || "")));
-      if (!cell) return "no day";
-      (cell.querySelector("button, [role=button]") || cell).click();
-      return "clicked";
+      const leaves = [...document.querySelectorAll("span, div, td, button, abbr")].filter((e) => vis(e) && !e.children.length);
+      // the calendar: the box around the day numbers 1 to 28
+      const ones = leaves.filter((e) => say(e) === "1");
+      let cal = null;
+      for (const one of ones) {
+        let box = one.parentElement;
+        for (let i = 0; i < 8 && box; i++, box = box.parentElement) {
+          const nums = new Set([...box.querySelectorAll("*")].filter((e) => !e.children.length && vis(e)).map(say).filter((t) => /^\\d{1,2}$/.test(t)));
+          if (nums.size >= 28) { cal = box; break; }
+        }
+        if (cal) break;
+      }
+      if (!cal) return JSON.stringify({ r: "no calendar" });
+      // which month it shows: the words near the grid
+      let around = cal;
+      for (let i = 0; i < 4 && around.parentElement && !/(january|february|march|april|may|june|july|august|september|october|november|december)/i.test(around.innerText); i++) around = around.parentElement;
+      const shown = (around.innerText.match(/(January|February|March|April|May|June|July|August|September|October|November|December)\\s*,?\\s*(\\d{4})?/) || [""])[0];
+      if (shown && !shown.startsWith(month)) {
+        // a different month: click the "next month" arrow
+        const next = [...around.querySelectorAll("[aria-label], button, [role=button]")].find((e) => vis(e) && /next/i.test(e.getAttribute("aria-label") || ""));
+        if (!next) return JSON.stringify({ r: "other month", shown });
+        next.click();
+        return JSON.stringify({ r: "moved", shown });
+      }
+      // the day: a cell with that number that isn't greyed out (days from the next or last month)
+      const cells = [...cal.querySelectorAll("*")].filter((e) => !e.children.length && vis(e) && say(e) === day);
+      const ok = cells.filter((e) => {
+        const c = e.closest("[aria-disabled], [aria-label], td, [role=gridcell], [role=button], button") || e;
+        return c.getAttribute("aria-disabled") !== "true" && !/disabled|outside|other/i.test(String(c.className));
+      });
+      const pickFrom = ok.length ? ok : cells;
+      // a number can show twice (this month's and a greyed one from the next/last month): small numbers like 3 are
+      // this month's when first (later ones belong to next month), big ones like 29 when last
+      const cell = Number(day) < 15 ? pickFrom[0] : pickFrom[pickFrom.length - 1];
+      if (!cell) return JSON.stringify({ r: "no day", shown });
+      (cell.closest("button, [role=button], [role=gridcell], td") || cell).setAttribute("data-vidauto", "day");
+      return JSON.stringify({ r: "found", shown });
     })()`);
-    if (r === "clicked") break;
-    if (r !== "other month") throw new Error(`Couldn't pick ${U.studioDate(ms)} in the calendar (${r})${dump(id)}`);
-    // go to the next month
-    const moved = js(id, `(function () {
-      const b = [...document.querySelectorAll("[aria-label]")].find((e) => /next month|next/i.test(e.getAttribute("aria-label")) &&
-        e.getBoundingClientRect().width > 0);
-      if (!b) return "";
-      b.click();
-      return "ok";
-    })()`);
-    if (!moved) {
-      // what the calendar looks like, so it can be fixed from the log
-      const seen = js(id, `(function () {
-        const vis = (e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; };
-        const a = document.activeElement;
-        const labels = [...document.querySelectorAll("[aria-label]")].filter(vis).map((e) => e.getAttribute("aria-label"))
-          .filter((t) => /20\\d\\d|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|month|prev|next/i.test(t)).slice(0, 15);
-        const grids = document.querySelectorAll("table, [role=grid], [role=dialog]").length;
-        const months = [...document.querySelectorAll("span, div, h2, h3")].filter((e) => vis(e) && !e.children.length &&
-          /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\\.?,? ?(20\\d\\d)?$/i.test((e.innerText || "").trim())).map((e) => e.innerText.trim()).slice(0, 5);
-        return "focus: " + (a ? a.tagName + (a.getAttribute("aria-label") ? " " + a.getAttribute("aria-label") : "") : "none") +
-          "; calendars/dialogs: " + grids + "; month words: " + (months.join(", ") || "none") + "; labels: " + (labels.join(" | ") || "none");
-      })()`);
-      throw new Error(`Couldn't find ${U.studioDate(ms)} in the calendar (${seen})`);
-    }
-    delay(1);
+    const res = JSON.parse(r || '{"r":"?"}');
+    if (res.r === "moved") { delay(1); continue; }
+    if (res.r !== "found") throw new Error(`Couldn't pick ${U.studioDate(ms)} in the calendar (${res.r}${res.shown ? ", it shows " + res.shown : ""})${dump(id)}`);
+    realClick(id, ['[data-vidauto="day"]'], `${U.studioDate(ms)} in the calendar`);
+    delay(1.5);
+    if (sameDay(fbWhen(id).date, ms)) return;
+    throw new Error(`Clicked ${U.studioDate(ms)} in the calendar, but the date shows ${fbWhen(id).date}`);
   }
-  delay(1);
+  throw new Error(`Couldn't get the calendar to ${MONTHS[d.getMonth()]} ${d.getFullYear()}`);
 }
 
 // Page code: the section (box) that has a heading with these exact words, e.g. "Tags" or "Add to playlist"
@@ -1004,32 +996,19 @@ function facebook(item, review) {
     if (w.date === null || (w.time === null && w.timeKind !== "parts")) {
       throw new Error(`Couldn't find the schedule's date and time (text boxes on the page: ${w.inputs || "none"})${dump(id)}`);
     }
-    // the date first (typed, then Return), then the time; if setting the time put the old date back, the date
-    // once more
-    const setTime = () => {
-      if (!sameClock(w.time, item.when)) fbSetWhen(id, "time", w.timeKind === "parts" ? fbTime(item.when) : timeLike(w.time, item.when), w.timeKind);
-      w = fbWhen(id);
-    };
-    if (!sameDay(w.date, item.when)) fbSetDate(id, item.when, w);
+    // the playlist and the time first, the date last (clicked in its calendar), then check both again
+    fbPlaylist(id);
     w = fbWhen(id);
-    if (w.date === null) throw new Error(`The date box went missing (text boxes: ${w.inputs || "none"})${dump(id)}`);
-    setTime();
-    if (!sameDay(w.date, item.when) && w.date !== null) {
-      log(`  (the date went back to ${w.date} after setting the time; setting it again)`);
-      fbSetDate(id, item.when, w);
-      w = fbWhen(id);
-      setTime();
-    }
+    if (!sameClock(w.time, item.when)) fbSetWhen(id, "time", w.timeKind === "parts" ? fbTime(item.when) : timeLike(w.time, item.when), w.timeKind);
+    w = fbWhen(id);
+    if (w.date === null) throw new Error(`Couldn't find the date box (text boxes: ${w.inputs || "none"})${dump(id)}`);
+    if (!sameDay(w.date, item.when)) fbSetDate(id, item.when);
+    delay(1);
+    w = fbWhen(id);
     log(`  schedule set to ${w.date} ${w.time} (wanted ${day} ${time})`);
     if (!sameDay(w.date, item.when) || !sameClock(w.time, item.when)) {
       throw new Error(`The schedule shows ${w.date} ${w.time} instead of ${day} ${time}. Nothing was posted; ` +
         "fix the date and time in the open tab and click Schedule yourself, or close the tab");
-    }
-    fbPlaylist(id);
-    // the playlist menu can shift things; check the date and time once more
-    w = fbWhen(id);
-    if (!sameDay(w.date, item.when) || !sameClock(w.time, item.when)) {
-      throw new Error(`The schedule changed to ${w.date} ${w.time} instead of ${day} ${time}. Nothing was posted; fix it in the open tab and click Schedule yourself, or close the tab`);
     }
 
     if (review) {
