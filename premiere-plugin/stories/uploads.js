@@ -586,8 +586,9 @@ const FB_WHEN_JS = `(function () {
   const isTime = (t) => /^\\d{1,2}:\\d{2}(\\s*[AP]M)?$/i.test(t);
   for (const e of document.querySelectorAll("[data-vidauto=date], [data-vidauto=time]")) e.removeAttribute("data-vidauto");
   const inputs = [...document.querySelectorAll("input")].filter(vis);
-  let date = inputs.find((e) => isDate(e.value.trim()));
-  let time = inputs.find((e) => isTime(e.value.trim()));
+  const named = (e, re) => re.test((e.getAttribute("aria-label") || "") + " " + (e.placeholder || ""));
+  let date = inputs.find((e) => isDate(e.value.trim())) || inputs.find((e) => named(e, /date/i));
+  let time = inputs.find((e) => isTime(e.value.trim())) || inputs.find((e) => named(e, /time/i));
   let dateKind = date ? "input" : "";
   let timeKind = time ? "input" : "";
   if (!date || !time) {
@@ -649,6 +650,147 @@ function fbSetWhen(id, which, text, kind) {
   delay(0.8);
   keys.keyCode(53); // Escape: close a calendar or time list if one opened
   delay(0.8);
+}
+
+// Page code: the section (box) that has a heading with these exact words, e.g. "Tags" or "Add to playlist"
+const FB_SECTION_JS = `function section(words, inside) {
+    // the heading may read "Tags · optional"; take the smallest element that says it
+    const re = new RegExp("^" + words.replace(/[.*+?^$()|[\\]\\\\]/g, "\\\\$&") + "(\\\\s*[·•-][\\\\s\\\\S]*)?$", "i");
+    const labels = [...document.querySelectorAll("span, div, label, h2, h3, h4")].filter((e) => {
+      const r = e.getBoundingClientRect();
+      return r.width > 0 && re.test((e.innerText || "").trim()) && (e.innerText || "").length < 60;
+    });
+    labels.sort((a, b) => a.querySelectorAll("*").length - b.querySelectorAll("*").length);
+    for (const label of labels) {
+      let box = label.parentElement;
+      while (box && box !== document.body && !box.querySelector(inside)) box = box.parentElement;
+      if (box && box !== document.body) return box;
+    }
+    return null;
+  }`;
+
+// Scroll Business Suite's form down a bit (sections further down only appear once they're scrolled to)
+function fbScroll(id) {
+  js(id, `(function () {
+    for (const e of document.querySelectorAll("div")) {
+      const st = getComputedStyle(e);
+      if (e.scrollHeight > e.clientHeight + 50 && /(auto|scroll)/.test(st.overflowY)) e.scrollTop += 500;
+    }
+    window.scrollBy(0, 500);
+  })()`);
+  delay(1);
+}
+
+// Wait (scrolling down) until a section shows; true if found
+function fbFindSection(id, words, inside) {
+  for (let i = 0; i < 20; i++) {
+    checkStop();
+    const found = js(id, `(function () { ${FB_SECTION_JS}
+      const box = section(${JSON.stringify(words)}, ${JSON.stringify(inside)});
+      if (!box) return "";
+      box.scrollIntoView({ block: "center" });
+      return "ok";
+    })()`);
+    if (found === "ok") return true;
+    fbScroll(id);
+  }
+  return false;
+}
+
+// The reel's Tags: add any of FB_TAGS that aren't there yet (type each one and press Return)
+function fbTags(id) {
+  const have = () => JSON.parse(js(id, `(function () { ${FB_SECTION_JS}
+    const box = section("Tags", "input");
+    if (!box) return "null";
+    box.querySelector("input").setAttribute("data-vidauto", "tags");
+    return JSON.stringify(box.innerText.split(/\\n/).map((t) => t.trim().toLowerCase()).filter(Boolean));
+  })()`) || "null");
+  if (!fbFindSection(id, "Tags", "input")) throw new Error(`Couldn't find the reel's Tags box${dump(id)}`);
+  delay(0.5);
+  let now = have();
+  if (!now) throw new Error(`Couldn't find the reel's Tags box${dump(id)}`);
+  const box = () => js(id, `(function () {
+    const e = document.querySelector('input[data-vidauto="tags"]');
+    if (!e) return "-";
+    e.scrollIntoView({ block: "center" });
+    e.focus();
+    return e.value;
+  })()`);
+  for (const tag of FB_TAGS) {
+    if (now.includes(tag.toLowerCase())) continue;
+    front(id);
+    if (box() === "-") throw new Error(`Couldn't find the reel's Tags box${dump(id)}`);
+    if (box()) {
+      // leftover text in the box: clear it first
+      keys.keystroke("a", { using: "command down" });
+      keys.keyCode(51); // Delete
+      delay(0.3);
+    }
+    keys.keystroke(tag);
+    delay(1.5); // let its suggestion list appear before pressing Return
+    // press Return until the tag shows as added (a slow suggestion list can swallow the first one)
+    for (let i = 0; i < 3; i++) {
+      keys.keyCode(36);
+      delay(1.2);
+      now = have() || now;
+      if (now.includes(tag.toLowerCase())) break;
+      box();
+    }
+    if (!now.includes(tag.toLowerCase())) {
+      keys.keystroke(","); // some tag boxes add the tag on a comma instead
+      delay(1.2);
+      now = have() || now;
+    }
+    if (!now.includes(tag.toLowerCase())) throw new Error(`Couldn't add the tag ${tag} (Tags shows: ${now.join(", ")})`);
+  }
+  const missing = FB_TAGS.filter((t) => !now.includes(t.toLowerCase()));
+  if (missing.length) throw new Error(`Couldn't add the tag(s) ${missing.join(", ")} (Tags shows: ${now.join(", ")})`);
+  log(`  tags: ${FB_TAGS.join(", ")}`);
+}
+
+// Share step: "Add to playlist" switched on, with the FB_PLAYLIST playlist chosen
+function fbPlaylist(id) {
+  const state = () => JSON.parse(js(id, `(function () { ${FB_SECTION_JS}
+    const box = section("Add to playlist", 'input[type="checkbox"], [role="switch"], [role="checkbox"]');
+    if (!box) return "null";
+    const sw = box.querySelector('input[type="checkbox"], [role="switch"], [role="checkbox"]');
+    sw.setAttribute("data-vidauto", "playlist-switch");
+    const on = sw.checked === true || sw.getAttribute("aria-checked") === "true";
+    const pick = box.querySelector('[role="combobox"], [aria-haspopup], select, [role="button"]');
+    if (pick) pick.setAttribute("data-vidauto", "playlist-pick");
+    return JSON.stringify({ on, text: box.innerText });
+  })()`) || "null");
+  if (!fbFindSection(id, "Add to playlist", 'input[type="checkbox"], [role="switch"], [role="checkbox"]')) {
+    throw new Error(`Couldn't find "Add to playlist"${dump(id)}`);
+  }
+  delay(0.5);
+  let st = state();
+  if (!st) throw new Error(`Couldn't find "Add to playlist"${dump(id)}`);
+  if (!st.on) {
+    jsClick(id, ['[data-vidauto="playlist-switch"]'], 'the "Add to playlist" switch');
+    delay(1.5);
+    st = state() || st;
+    if (!st.on) throw new Error(`Couldn't switch on "Add to playlist"${dump(id)}`);
+  }
+  if (!st.text.includes(FB_PLAYLIST)) {
+    jsClick(id, ['[data-vidauto="playlist-pick"]'], "the Playlists menu");
+    delay(1.5);
+    const picked = js(id, `(function () {
+      const want = ${JSON.stringify(FB_PLAYLIST.toLowerCase())};
+      const opt = [...document.querySelectorAll('[role="option"], [role="menuitem"], [role="menuitemcheckbox"], [role="checkbox"], span, div')]
+        .find((e) => e.getBoundingClientRect().width > 0 && (e.innerText || "").trim().toLowerCase() === want &&
+          !e.closest('[data-vidauto="playlist-pick"]'));
+      if (!opt) return "";
+      (opt.closest('[role="option"], [role="menuitem"], [role="menuitemcheckbox"], [role="checkbox"], label') || opt).click();
+      return "ok";
+    })()`);
+    delay(1);
+    keys.keyCode(53); // Escape: close the menu if it stays open
+    delay(1);
+    st = state() || st;
+    if (picked !== "ok" || !st.text.includes(FB_PLAYLIST)) throw new Error(`Couldn't choose the "${FB_PLAYLIST}" playlist${dump(id)}`);
+  }
+  log(`  playlist: ${FB_PLAYLIST}`);
 }
 
 // "Oct 2, 2026" + "01:30 PM" the way Business Suite shows them
