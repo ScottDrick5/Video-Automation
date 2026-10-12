@@ -111,9 +111,30 @@ on createCaptions()
 		end try
 		set {dx, dy, ww, wh} to rec
 		logLine("Waiting for a Premiere window of about " & ww & "x" & wh)
-		set found to my winCmd("find " & ww & " " & wh & " 8")
+		set found to my winCmd("find " & ww & " " & wh & " 12")
 		if found is "none" then
-			logLine("RESULT: the Create captions window did not appear within 8s (or its size changed; record the button position again).")
+			-- Premiere can be slow to open it (or missed the shortcut): try the shortcut once more
+			logLine("Not there yet. Premiere windows now: " & my winCmd("list"))
+			logLine("Pressing the shortcut again")
+			tell application "System Events"
+				set frontmost of p to true
+				delay 0.7
+				try
+					click menu item "Text" of menu 1 of menu bar item "Window" of menu bar 1 of p
+					delay 1
+					if my markOf(menu item "Text" of menu 1 of menu bar item "Window" of menu bar 1 of p) is "" then
+						click menu item "Text" of menu 1 of menu bar item "Window" of menu bar 1 of p
+						delay 1
+					end if
+				end try
+				keystroke "c" using {control down, option down, command down}
+			end tell
+			delay 2
+			set found to my winCmd("find " & ww & " " & wh & " 15")
+		end if
+		if found is "none" then
+			logLine("Premiere windows now: " & my winCmd("list"))
+			logLine("RESULT: the Create captions window did not appear (or its size changed: if it is open now at a different size, run 'Record Button Position.command' again).")
 			return
 		end if
 		set {wx, wy, fw, fh} to my numbersIn(found)

@@ -9,6 +9,7 @@
 //   rel <w> <h>                 -> pointer distance from the top-left of the Premiere window of about that
 //                                  size, "dx,dy" (for spots inside a window whose menus open as separate windows)
 //   click <x> <y>               -> click the left mouse button there and put the pointer back
+//   list                        -> every Premiere window's size and position (for the log)
 
 ObjC.import("CoreGraphics");
 
@@ -95,8 +96,16 @@ function click(x, y) {
   return "clicked at " + Math.round(x) + "," + Math.round(y);
 }
 
+// Every Premiere window's size and spot, for the log when an expected window doesn't show
+function list() {
+  const all = premiereWindows();
+  const main = mainWindow(all);
+  return all.map((w) => `${Math.round(w.w)}x${Math.round(w.h)} at ${Math.round(w.x)},${Math.round(w.y)}${w === main ? " (main)" : ""}`).join("; ") || "none";
+}
+
 function run(argv) {
   const [cmd, a, b, c] = argv;
+  if (cmd === "list") return list();
   if (cmd === "record") return record();
   if (cmd === "point") return point();
   if (cmd === "find") return find(Number(a), Number(b), Number(c || 8));
