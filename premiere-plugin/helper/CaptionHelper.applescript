@@ -113,22 +113,24 @@ on createCaptions()
 		logLine("Waiting for a Premiere window of about " & ww & "x" & wh)
 		set found to my winCmd("find " & ww & " " & wh & " 12")
 		if found is "none" then
-			-- Premiere can be slow to open it (or missed the shortcut): try the shortcut once more
+			-- the shortcut didn't open it: click the Text panel's own "Create captions from transcript" button
+			-- instead (the panel shows it, centred, while the sequence has no captions)
 			logLine("Not there yet. Premiere windows now: " & my winCmd("list"))
-			logLine("Pressing the shortcut again")
-			tell application "System Events"
-				set frontmost of p to true
-				delay 0.7
-				try
-					click menu item "Text" of menu 1 of menu bar item "Window" of menu bar 1 of p
-					delay 1
-					if my markOf(menu item "Text" of menu 1 of menu bar item "Window" of menu bar 1 of p) is "" then
-						click menu item "Text" of menu 1 of menu bar item "Window" of menu bar 1 of p
-						delay 1
-					end if
-				end try
-				keystroke "c" using {control down, option down, command down}
-			end tell
+			set panelAt to my findTextPanel()
+			if panelAt is "none" then
+				logLine("The floating Text panel wasn't found either; pressing the shortcut again")
+				tell application "System Events"
+					set frontmost of p to true
+					delay 0.7
+					keystroke "c" using {control down, option down, command down}
+				end tell
+			else
+				set {px, py, pw, ph} to my numbersIn(panelAt)
+				-- the button sits in the middle of the panel's empty Captions area (below its tabs and toolbar)
+				set bx to px + (pw div 2)
+				set by to py + 136 + ((ph - 189) div 2)
+				logLine("Clicking 'Create captions from transcript' in the Text panel at " & panelAt & ": " & my winCmd("click " & bx & " " & by))
+			end if
 			delay 2
 			set found to my winCmd("find " & ww & " " & wh & " 15")
 		end if
@@ -175,6 +177,22 @@ on createCaptions()
 		end if
 	end try
 end createCaptions
+
+-- The floating Text panel's window "x,y,w,h" (at one of the sizes recorded by "Record Text Panel
+-- Positions.command"), or "none"
+on findTextPanel()
+	try
+		set lns to paragraphs of (do shell script "cat " & quoted form of panelFile)
+	on error
+		return "none"
+	end try
+	repeat with b from 0 to ((count of lns) div 4) - 1
+		set pt to my numbersIn(item (b * 4 + 1) of lns)
+		set f to my winCmd("find " & (item 4 of pt) & " " & (item 5 of pt) & " 0.5")
+		if f is not "none" then return f
+	end repeat
+	return "none"
+end findTextPanel
 
 -- Click a spot recorded by "Record Text Panel Positions.command" ("left,top,right,w,h") in the
 -- floating Text panel window at {wx, wy} with width fw. Spots on the right side (Replace all) are
