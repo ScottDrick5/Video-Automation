@@ -46,7 +46,7 @@ const ARROW_TRACK = 2; // V3
 const ARROW_SECONDS = 5;
 const CLIP_ARROW_AT = 5; // seconds into each clip
 const TICKS_PER_SECOND = 254016000000;
-const PLUGIN_VERSION = "0.9.0";
+const PLUGIN_VERSION = "0.9.1";
 
 const state = { clip: null, transcript: null, cut: null, sequence: null };
 
@@ -906,6 +906,21 @@ async function editablePath(v) {
   if (await exists(out)) {
     v.editPath = out;
     return out;
+  }
+  // A copy made earlier under another size in its name (the size reading can differ, e.g. 0 when the Mac didn't
+  // report it): reuse it rather than converting again
+  try {
+    const esc = base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const earlier = (await listFolder(CONVERTED_DIR)).map((e) => e.name)
+      .filter((n) => new RegExp(`^${esc} \\(\\d+\\)\\.mp4$`).test(n));
+    if (earlier.length) {
+      const pick = earlier.sort().pop();
+      log(`  using the copy converted earlier: ${pick}` + (pick === out.split("/").pop() ? "" : ` (this file reads as ${v.size || "an unknown"} bytes now)`));
+      v.editPath = `${CONVERTED_DIR}/${pick}`;
+      return v.editPath;
+    }
+  } catch (e) {
+    // no converted folder yet
   }
   log(`  converting ${v.name} into a Premiere-friendly copy (once per video; a few minutes)...`);
   const status = document.getElementById("runStatus");
