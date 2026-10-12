@@ -15,6 +15,7 @@ const SOURCE_DIR = AITA_DIR + "/Source Video";
 const UPLOADS_FILE = AITA_DIR + "/vidauto-uploads.json"; // what has been scheduled, so nothing is posted twice
 const LOG_FILE = AITA_DIR + "/vidauto-uploads-log.txt";
 const YT_CHANNEL = "UCI3S3qXsupSQFBb4Qe2szpg";
+const FB_ASSET = "214107491779719"; // your Facebook page in Meta Business Suite
 const LIMITS_FILE = AITA_DIR + "/vidauto-upload-limits.json"; // e.g. { "youtube": 15 }: most uploads per day
 const DEFAULT_DAILY_LIMIT = { youtube: 10, tiktok: 10, facebook: 10 };
 
@@ -538,6 +539,179 @@ function creditFor(folder) {
   return { credit: null, source: name, how: "no creator in its file info" };
 }
 
+
+// ------------------------------------------------------------------ Facebook (Meta Business Suite)
+
+const FB_COMPOSER = `https://business.facebook.com/latest/composer/?asset_id=${FB_ASSET}&nav_ref=internal_nav&ref=biz_web_home_create_post&context_ref=HOME`;
+
+// Put text on the clipboard and paste it into the box that has the cursor (keeps the blank lines)
+function paste(text) {
+  const pb = $.NSPasteboard.generalPasteboard;
+  pb.clearContents;
+  pb.setStringForType($(text), $.NSPasteboardTypeString);
+  delay(0.3);
+  keys.keystroke("a", { using: "command down" });
+  delay(0.2);
+  keys.keystroke("v", { using: "command down" });
+  delay(1);
+}
+
+// Click a button by its exact words; `last` picks the lowest one on the page (e.g. the bottom "Schedule"
+// button rather than the "Schedule" tab above it)
+function fbButton(id, words, last) {
+  return js(id, `(function () {
+    const want = ${JSON.stringify(words.toLowerCase())};
+    const all = [...document.querySelectorAll('button, [role="button"], [role="tab"], [role="radio"]')].filter((b) => {
+      const r = b.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 && (b.innerText || "").trim().toLowerCase() === want &&
+        b.getAttribute("aria-disabled") !== "true" && !b.disabled;
+    });
+    all.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+    const b = ${last ? "all[all.length - 1]" : "all[0]"};
+    if (!b) return "";
+    b.click();
+    return "clicked";
+  })()`) === "clicked";
+}
+
+// The schedule's date and time boxes: { date, time } as shown, plus where they are for clicking
+const FB_WHEN_JS = `(function () {
+  const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+  const inputs = [...document.querySelectorAll("input")].filter(vis);
+  const date = inputs.find((e) => /^[A-Z][a-z]{2} \\d{1,2}, \\d{4}$/.test(e.value) || /date/i.test(e.getAttribute("aria-label") || e.placeholder || ""));
+  const time = inputs.find((e) => /^\\d{1,2}:\\d{2}\\s*[AP]M$/i.test(e.value) || /time/i.test(e.getAttribute("aria-label") || e.placeholder || ""));
+  const mark = (e, name) => { if (e) e.setAttribute("data-vidauto", name); };
+  mark(date, "date");
+  mark(time, "time");
+  return JSON.stringify({ date: date ? date.value : null, time: time ? time.value : null });
+})()`;
+
+function fbWhen(id) {
+  return JSON.parse(js(id, FB_WHEN_JS) || "{}");
+}
+
+// "Oct 2, 2026" + "01:30 PM" the way Business Suite shows them
+function fbTime(ms) {
+  const t = U.studioTime(ms);
+  return t.length < 8 ? "0" + t : t;
+}
+const sameTime = (a, b) => String(a || "").replace(/^0/, "").replace(/\s+/g, " ").toUpperCase() === String(b || "").replace(/^0/, "").replace(/\s+/g, " ").toUpperCase();
+
+// One full video as a Facebook reel. review = true fills in everything and stops before the final "Schedule"
+// click (the tab stays open for you to check and click it).
+function facebook(item, review) {
+  const path = `${CLIPS_DIR}/${item.folder}/${item.file}`;
+  const id = openTab(FB_COMPOSER);
+  let keepOpen = false;
+  try {
+    waitFor(id, ["text:Add photo/video"], 60, 'Business Suite\'s "Add photo/video" button');
+    realClick(id, ["text:Add photo/video"], 'the "Add photo/video" button');
+    delay(1.5);
+    if (has(id, ["text:Upload from computer"])) realClick(id, ["text:Upload from computer"], '"Upload from computer"');
+    pickFile(path);
+    keepOpen = true; // from here on, leave the tab open if anything goes wrong so you can see it
+
+    // the window turns into "Create reel"; wait for the video to finish uploading (the bar reaches 100%)
+    waitFor(id, ["text:Create reel", "text:Reel details"], 90, 'The "Create reel" window');
+    const end = Date.now() + 45 * 60000;
+    let pct = "";
+    while (Date.now() < end) {
+      checkStop();
+      pct = js(id, `(function () {
+        const m = [...document.querySelectorAll("span, div")].map((e) => (e.children.length ? "" : e.innerText || "").trim())
+          .filter((t) => /^\\d{1,3}%$/.test(t));
+        return m.length ? m[0] : "";
+      })()`);
+      if (pct === "100%") break;
+      delay(3);
+    }
+    log(`  uploaded (${pct || "no progress bar shown"})`);
+
+    // description: name, credit, hashtags
+    const box = js(id, `(function () {
+      const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+      const eds = [...document.querySelectorAll('[contenteditable="true"], textarea')].filter(vis);
+      const e = eds.find((x) => /viewers know|describe|description/i.test((x.getAttribute("aria-label") || "") + (x.getAttribute("aria-placeholder") || "") +
+        (x.getAttribute("placeholder") || "") + ((x.parentElement && x.parentElement.innerText) || ""))) || eds[0];
+      if (!e) return "";
+      e.scrollIntoView({ block: "center" });
+      e.focus();
+      return "ok";
+    })()`);
+    if (box !== "ok") throw new Error(`Couldn't find the reel's description box${dump(id)}`);
+    front(id);
+    paste(item.description);
+    const got = js(id, `(document.activeElement && (document.activeElement.innerText || document.activeElement.value) || "").trim()`);
+    if (!got.includes(item.title) || !got.includes(item.credit)) {
+      throw new Error(`The description didn't go in right (it shows: "${got.replace(/\s+/g, " ").slice(0, 150)}")`);
+    }
+    log(`  description: ${item.title} / Gameplay Video Credit: ${item.credit} / hashtags`);
+
+    // Create -> Edit -> Share
+    for (const step of ["Edit", "Share"]) {
+      if (!fbButton(id, "Next", true)) throw new Error(`Couldn't press "Next" to go to the ${step} step${dump(id)}`);
+      delay(3);
+    }
+    waitFor(id, ["text:Scheduling options"], 30, 'The "Scheduling options" step');
+    // choose the "Schedule" option (next to "Share now") unless its date and time boxes already show. Only click
+    // it when the bottom "Schedule" button is there too, so the top one is surely the option, not the button.
+    let w = fbWhen(id);
+    if (w.date === null || w.time === null) {
+      const count = Number(js(id, `String([...document.querySelectorAll('button, [role="button"], [role="tab"], [role="radio"]')]
+        .filter((b) => b.getBoundingClientRect().width > 0 && (b.innerText || "").trim() === "Schedule").length)`));
+      if (count < 2 || !fbButton(id, "Schedule", false)) throw new Error(`Couldn't choose the "Schedule" option${dump(id)}`);
+      delay(1.5);
+      w = fbWhen(id);
+    }
+
+    const day = U.studioDate(item.when);
+    const time = fbTime(item.when);
+    if (w.date === null || w.time === null) throw new Error(`Couldn't find the schedule's date and time boxes${dump(id)}`);
+    if (w.date !== day) {
+      typeInto(id, ['input[data-vidauto="date"]'], day, "the date box", true);
+      keys.keyCode(53); // Escape: close the calendar if it opened
+      delay(0.8);
+    }
+    w = fbWhen(id);
+    if (!sameTime(w.time, time)) {
+      typeInto(id, ['input[data-vidauto="time"]'], time, "the time box", true);
+      delay(0.8);
+    }
+    w = fbWhen(id);
+    log(`  schedule set to ${w.date} ${w.time} (wanted ${day} ${time})`);
+    if (w.date !== day || !sameTime(w.time, time)) {
+      throw new Error(`The schedule shows ${w.date} ${w.time} instead of ${day} ${time}. Nothing was posted; ` +
+        "fix the date and time in the open tab and click Schedule yourself, or close the tab");
+    }
+    const playlist = js(id, "document.body.innerText.includes('Full Videos') ? 'yes' : ''");
+    if (!playlist) log('  (the "Full Videos" playlist isn\'t selected; leaving it as it is)');
+
+    if (review) {
+      log("  TEST: everything is filled in. Check the description, date and time in the open Business Suite tab,");
+      log('  then click "Schedule" yourself (or fix anything first).');
+      return true;
+    }
+    if (!fbButton(id, "Schedule", true)) throw new Error(`Couldn't press the "Schedule" button${dump(id)}`);
+    // done when the reel window closes or Business Suite says it's scheduled
+    const until = Date.now() + 90000;
+    let ok = false;
+    while (Date.now() < until) {
+      delay(2);
+      const page = js(id, "location.href + ' ' + document.body.innerText.slice(0, 4000)");
+      if (/scheduled/i.test(page) || !/Scheduling options/.test(page)) {
+        ok = true;
+        break;
+      }
+    }
+    if (!ok) throw new AfterFilePicked("Pressed Schedule, but Business Suite didn't confirm it; check Planner in Business Suite (it may be scheduled)");
+    log(`  scheduled on Facebook for ${day} ${time}`);
+    keepOpen = false;
+    return false;
+  } finally {
+    if (!keepOpen) closeTab(id);
+  }
+}
+
 // ------------------------------------------------------------------ main
 
 function run(argv) {
@@ -547,7 +721,7 @@ function run(argv) {
   const here = argv[argv.length - 1] || ".";
   U = eval(`(function () { var module = { exports: {} }; ${readText(here + "/upload-rules.js")}
     return module.exports; })()`);
-  if (platform !== "youtube") return `Uploading to ${platform} isn't built yet.`;
+  if (platform !== "youtube" && platform !== "facebook") return `Uploading to ${platform} isn't built yet.`;
 
   const record = JSON.parse(readText(UPLOADS_FILE) || '{"uploads":[]}');
   const uploaded = new Set(record.uploads.map((x) => x.key));
@@ -607,17 +781,46 @@ function run(argv) {
     const item = items[0];
     if (!item) return "Nothing to upload.";
     log(`${item.file} -> ${U.studioDate(item.when)} ${U.studioTime(item.when)}`);
+    const site = platform === "facebook" ? "Business Suite" : "YouTube";
     try {
-      youtube(item, true);
+      if (platform === "facebook") facebook(item, true);
+      else youtube(item, true);
       remember(item, "test: you click Schedule");
-      log("=== TEST done: waiting for you to click Schedule in the open YouTube tab.");
-      return "Test: everything is filled in on YouTube; check it and click Schedule in the open tab.";
+      log(`=== TEST done: waiting for you to click Schedule in the open ${site} tab.`);
+      return `Test: everything is filled in on ${site}; check it and click Schedule in the open tab.`;
     } catch (e) {
       if (e instanceof UploadLimit) return limitStop(items.length);
       if (e instanceof AfterFilePicked) remember(item, "failed partway: finish by hand");
       log(`  FAILED: ${e.message}`);
       return `Stopped: ${e.message.split("\n")[0]}`;
     }
+  }
+
+  // Facebook: one full video at a time
+  if (platform === "facebook") {
+    for (const item of items) {
+      if (exists(STOP_FILE)) {
+        log(`STOPPED by you after ${done} of ${items.length}.`);
+        return `Stopped by you after ${done} of ${items.length}.`;
+      }
+      log(`--- ${item.folder}: ${item.file} -> ${U.studioDate(item.when)} ${fbTime(item.when)}`);
+      try {
+        facebook(item, false);
+        remember(item);
+        done++;
+      } catch (e) {
+        if (e instanceof StopRequested) {
+          log(`STOPPED by you after ${done} of ${items.length}.`);
+          return `Stopped by you after ${done} of ${items.length}.`;
+        }
+        if (e instanceof AfterFilePicked) remember(item, "pressed Schedule but not confirmed: check Planner");
+        log(`  FAILED: ${e.message}`);
+        log("STOPPED so nothing gets posted twice or at the wrong time. The Business Suite tab is left open; check Planner, then run again.");
+        return `Stopped after ${done} of ${items.length}: ${e.message.split("\n")[0]}`;
+      }
+    }
+    log(`=== Done: ${done} of ${items.length} scheduled on facebook`);
+    return `Done: ${done} of ${items.length} scheduled on Facebook.`;
   }
 
   // one date folder at a time: upload its videos together, then fill in and schedule each

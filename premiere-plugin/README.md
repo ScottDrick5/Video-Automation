@@ -57,9 +57,17 @@ The panel shows the current source video and how much is left. To start the next
 (for example after cutting a video by hand), type the timecode, e.g. `00;07;45;01`, and click
 **Set start of next video**. Progress is kept in `/Users/drick/Documents/AITA/vidauto-usage.json`.
 
-## Upload (YouTube for now; TikTok and Facebook next)
+## Upload (YouTube and Facebook; TikTok next)
 
-Click **Upload** in the panel (or double-click `stories/Upload Videos.command`), or tick **Upload at the end of Run**.
+Tick where to upload under **Upload to** (YouTube, Facebook; both runs one after the other), then click **Upload**
+in the panel (or double-click `stories/Upload Videos.command` and type f or y), or tick **Upload at the end of Run**.
+
+**Facebook:** only the full video, at 1:30 PM Eastern on the folder's date. It opens Meta Business Suite's Create
+post, adds the video (Business Suite turns it into a reel), pastes the text below into the description, clicks Next
+twice, picks Schedule, sets the date and time and clicks Schedule. It checks the date and time before the last
+click; if they don't match, nothing is posted and the tab stays open. With **Test: just one** it fills everything
+in and stops before the last click, so you check it and click Schedule yourself.
+
 For every finished date folder from today on, it schedules on YouTube (Eastern time, on the folder's date):
 the full video at 11:30 AM and Part 1-5 at 1:30, 3:30, 5:30, 7:30 and 9:30 PM. A Part 6 or later isn't scheduled
 (the log says so). Title = the video's name. On YouTube your saved default description is kept and only the name

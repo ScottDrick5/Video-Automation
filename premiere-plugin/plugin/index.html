@@ -16,7 +16,7 @@
     </style>
   </head>
   <body>
-    <h3>VidAuto <span class="hint">v0.8.2</span></h3>
+    <h3>VidAuto <span class="hint">v0.9.0</span></h3>
     <div class="hint">Run gets this week's stories in Chrome, then makes the full video and clips for every date folder with a voiceover but no full video yet. Open your AITA Template project and Chrome (signed in) first, and keep hands off the mouse while it runs.</div>
     <div class="step"><sp-button id="run" style="margin-right: 8px">Run</sp-button><sp-button id="stop" variant="negative" disabled>Stop</sp-button></div>
     <div class="step"><span class="status" id="runStatus"></span></div>
@@ -27,7 +27,12 @@
     </div>
     <div class="step">
       <input type="checkbox" id="uploadAfter" style="margin-right: 6px" />
-      <label for="uploadAfter">Upload at the end of Run (YouTube for now)</label>
+      <label for="uploadAfter">Upload at the end of Run</label>
+    </div>
+    <div class="step">
+      Upload to:
+      <input type="checkbox" id="upYoutube" style="margin: 0 4px 0 8px" /><label for="upYoutube">YouTube</label>
+      <input type="checkbox" id="upFacebook" checked style="margin: 0 4px 0 12px" /><label for="upFacebook">Facebook</label>
     </div>
     <div class="step">
       <input type="checkbox" id="testOne" style="margin-right: 6px" />

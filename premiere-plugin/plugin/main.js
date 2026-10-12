@@ -46,7 +46,7 @@ const ARROW_TRACK = 2; // V3
 const ARROW_SECONDS = 5;
 const CLIP_ARROW_AT = 5; // seconds into each clip
 const TICKS_PER_SECOND = 254016000000;
-const PLUGIN_VERSION = "0.8.2";
+const PLUGIN_VERSION = "0.9.0";
 
 const state = { clip: null, transcript: null, cut: null, sequence: null };
 
@@ -1162,8 +1162,24 @@ async function getStories(count = 0) {
   return { text: result.replace(/^RESULT:\s*/, ""), folders: made };
 }
 
-// Upload: the helper schedules the finished videos (YouTube for now). Its progress is copied into this log.
+// Upload: the helper schedules the finished videos on each platform ticked under "Upload to" (one after the
+// other). Its progress is copied into this log.
 async function uploadVideos(testOne) {
+  const platforms = [["youtube", "upYoutube"], ["facebook", "upFacebook"]]
+    .filter(([, box]) => document.getElementById(box).checked).map(([p]) => p);
+  if (!platforms.length) {
+    log("--- Upload: no platform ticked under \"Upload to\"");
+    return "no platform ticked";
+  }
+  const results = [];
+  for (const platform of platforms) {
+    checkStop();
+    results.push(`${platform}: ${await uploadTo(platform, testOne)}`);
+  }
+  return results.join("; ");
+}
+
+async function uploadTo(platform, testOne) {
   let seen = ((await readTextFile(UPLOADS_LOG)) || "").length;
   const copyNewLines = async () => {
     const text = (await readTextFile(UPLOADS_LOG)) || "";
@@ -1172,10 +1188,10 @@ async function uploadVideos(testOne) {
     seen = text.length;
     if (fresh) fresh.split(/\n/).forEach((l) => log("  " + l.replace(/^\S+\s+(AM|PM)?\s*/, "")));
   };
-  log("--- Scheduling uploads (Chrome; hands off the mouse and keyboard)");
-  setRunStatus("", "scheduling uploads... hands off the mouse and keyboard");
+  log(`--- Scheduling uploads on ${platform} (Chrome; hands off the mouse and keyboard)`);
+  setRunStatus("", `scheduling uploads on ${platform}... hands off the mouse and keyboard`);
   // test: one video, filled in but not scheduled, so you can check it and click Schedule yourself
-  await writeTextFile(UPLOADS_ARGS, testOne ? "youtube 1 review\n" : "youtube 0\n");
+  await writeTextFile(UPLOADS_ARGS, testOne ? `${platform} 1 review\n` : `${platform} 0\n`);
   await startHelper("uploads");
   const t0 = Date.now();
   let helperLog = "";
