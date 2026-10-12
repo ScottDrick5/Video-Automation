@@ -13,6 +13,6 @@ for (const name of ["uploads.js", "stories.js"]) {
     const app = () => stub();
     app.currentApplication = () => stub();
     const run = new Function("ObjC", "Application", "$", "delay", `${src}\n;return typeof run;`);
-    assert.strictEqual(run({ import() {}, unwrap: (x) => x }, app, stub(), () => {}), "function");
+    assert.strictEqual(run({ import() {}, unwrap: () => "/Users/test" }, app, stub(), () => {}), "function");
   });
 }
