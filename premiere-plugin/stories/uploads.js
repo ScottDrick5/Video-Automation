@@ -682,6 +682,58 @@ function fbSetWhen(id, which, text, kind) {
   delay(0.8);
 }
 
+// The date: first type it (and leave the box with Tab, which keeps it; Escape can undo it). If the box doesn't
+// take typing, open its calendar and click the day (moving to the next month if needed).
+function fbSetDate(id, ms, w) {
+  const text = dateLike(w.date, ms);
+  if (w.dateKind === "input") {
+    typeInto(id, ['input[data-vidauto="date"]'], text, "the date box", false);
+    keys.keyCode(48); // Tab
+    delay(1);
+    if (sameDay(fbWhen(id).date, ms)) return;
+  }
+  const d = new Date(ms);
+  const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  fbWhen(id); // marks the date box again
+  realClick(id, ['[data-vidauto="date"]'], "the date box");
+  delay(1.2);
+  for (let tries = 0; tries < 3; tries++) {
+    const r = js(id, `(function () {
+      const vis = (e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; };
+      const month = ${JSON.stringify(MONTHS[d.getMonth()])}, year = ${JSON.stringify(String(d.getFullYear()))}, day = ${JSON.stringify(String(d.getDate()))};
+      // a day cell named with the whole date, e.g. "October 13, 2026" or "Tuesday, October 13, 2026"
+      const named = [...document.querySelectorAll("[aria-label]")].find((e) => vis(e) &&
+        new RegExp("\\\\b" + month + " " + day + ",? " + year).test(e.getAttribute("aria-label")));
+      if (named) { (named.closest("button, [role=button], [role=gridcell], td") || named).click(); return "clicked"; }
+      // otherwise: the calendar's heading says the month, then click the day number in its grid
+      const heading = [...document.querySelectorAll("span, div, h2, h3")].find((e) => vis(e) && !e.children.length &&
+        new RegExp("^" + month + ",? " + year + "$").test((e.innerText || "").trim()));
+      if (!heading) return "other month";
+      let cal = heading.parentElement;
+      while (cal && !cal.querySelector("table, [role=grid]")) cal = cal.parentElement;
+      if (!cal) return "no grid";
+      const cell = [...cal.querySelectorAll("table td, [role=gridcell], [role=grid] button")].find((e) => vis(e) &&
+        (e.innerText || "").trim() === day && !/disabled|outside/i.test(e.className + " " + (e.getAttribute("aria-disabled") || "")));
+      if (!cell) return "no day";
+      (cell.querySelector("button, [role=button]") || cell).click();
+      return "clicked";
+    })()`);
+    if (r === "clicked") break;
+    if (r !== "other month") throw new Error(`Couldn't pick ${U.studioDate(ms)} in the calendar (${r})${dump(id)}`);
+    // go to the next month
+    const moved = js(id, `(function () {
+      const b = [...document.querySelectorAll("[aria-label]")].find((e) => /next month|next/i.test(e.getAttribute("aria-label")) &&
+        e.getBoundingClientRect().width > 0);
+      if (!b) return "";
+      b.click();
+      return "ok";
+    })()`);
+    if (!moved) throw new Error(`Couldn't find ${U.studioDate(ms)} in the calendar${dump(id)}`);
+    delay(1);
+  }
+  delay(1);
+}
+
 // Page code: the section (box) that has a heading with these exact words, e.g. "Tags" or "Add to playlist"
 const FB_SECTION_JS = `function section(words, inside) {
     // the heading may read "Tags · optional"; take the smallest element that says it
@@ -924,7 +976,7 @@ function facebook(item, review) {
     if (w.date === null || (w.time === null && w.timeKind !== "parts")) {
       throw new Error(`Couldn't find the schedule's date and time (text boxes on the page: ${w.inputs || "none"})${dump(id)}`);
     }
-    if (!sameDay(w.date, item.when)) fbSetWhen(id, "date", dateLike(w.date, item.when), w.dateKind);
+    if (!sameDay(w.date, item.when)) fbSetDate(id, item.when, w);
     w = fbWhen(id);
     if (w.time === null && w.timeKind !== "parts") throw new Error(`The time box went missing after setting the date (text boxes: ${w.inputs || "none"})${dump(id)}`);
     if (!sameClock(w.time, item.when)) fbSetWhen(id, "time", w.timeKind === "parts" ? fbTime(item.when) : timeLike(w.time, item.when), w.timeKind);
