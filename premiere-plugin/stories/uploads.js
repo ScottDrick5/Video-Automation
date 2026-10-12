@@ -6,6 +6,7 @@
 
 ObjC.import("Foundation");
 ObjC.import("CoreGraphics");
+ObjC.import("AppKit"); // the clipboard
 const app = Application.currentApplication();
 app.includeStandardAdditions = true;
 
@@ -550,7 +551,7 @@ const FB_COMPOSER = `https://business.facebook.com/latest/composer/?asset_id=${F
 function paste(text) {
   const pb = $.NSPasteboard.generalPasteboard;
   pb.clearContents;
-  pb.setStringForType($(text), $.NSPasteboardTypeString);
+  pb.setStringForType($(text), $("public.utf8-plain-text"));
   delay(0.3);
   keys.keystroke("a", { using: "command down" });
   delay(0.2);
