@@ -691,6 +691,22 @@ function fbSetDate(id, ms, w) {
     keys.keyCode(48); // Tab
     delay(1);
     if (sameDay(fbWhen(id).date, ms)) return;
+    // second way: select the old date, delete it, type the new one slowly, press Return
+    fbWhen(id);
+    realClick(id, ['input[data-vidauto="date"]'], "the date box");
+    delay(0.8);
+    js(id, `(function () { const e = document.querySelector('input[data-vidauto="date"]'); if (e) { e.focus(); e.select(); } })()`);
+    keys.keyCode(51); // Delete
+    delay(0.3);
+    for (const ch of text) {
+      keys.keystroke(ch);
+      delay(0.08);
+    }
+    delay(0.5);
+    keys.keyCode(36); // Return
+    delay(1);
+    if (sameDay(fbWhen(id).date, ms)) return;
+    log(`  (typing the date didn't stick: it shows ${fbWhen(id).date}; trying its calendar)`);
   }
   const d = new Date(ms);
   const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -728,7 +744,21 @@ function fbSetDate(id, ms, w) {
       b.click();
       return "ok";
     })()`);
-    if (!moved) throw new Error(`Couldn't find ${U.studioDate(ms)} in the calendar${dump(id)}`);
+    if (!moved) {
+      // what the calendar looks like, so it can be fixed from the log
+      const seen = js(id, `(function () {
+        const vis = (e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; };
+        const a = document.activeElement;
+        const labels = [...document.querySelectorAll("[aria-label]")].filter(vis).map((e) => e.getAttribute("aria-label"))
+          .filter((t) => /20\\d\\d|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|month|prev|next/i.test(t)).slice(0, 15);
+        const grids = document.querySelectorAll("table, [role=grid], [role=dialog]").length;
+        const months = [...document.querySelectorAll("span, div, h2, h3")].filter((e) => vis(e) && !e.children.length &&
+          /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\\.?,? ?(20\\d\\d)?$/i.test((e.innerText || "").trim())).map((e) => e.innerText.trim()).slice(0, 5);
+        return "focus: " + (a ? a.tagName + (a.getAttribute("aria-label") ? " " + a.getAttribute("aria-label") : "") : "none") +
+          "; calendars/dialogs: " + grids + "; month words: " + (months.join(", ") || "none") + "; labels: " + (labels.join(" | ") || "none");
+      })()`);
+      throw new Error(`Couldn't find ${U.studioDate(ms)} in the calendar (${seen})`);
+    }
     delay(1);
   }
   delay(1);
