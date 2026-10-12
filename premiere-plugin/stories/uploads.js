@@ -863,9 +863,13 @@ function fbPlaylist(id) {
       box.querySelector('input[type="checkbox"], [role="switch"], [role="checkbox"]');
     sw.setAttribute("data-vidauto", "playlist-switch");
     const on = sw.checked === true || sw.getAttribute("aria-checked") === "true";
-    const pick = box.querySelector('[role="combobox"], [aria-haspopup], select, [role="button"]');
+    // once switched on, a "Playlists" menu shows under it (it may be outside the switch's own box)
+    const pickSel = '[role="combobox"], [aria-haspopup], select, [role="button"]';
+    const list = section("Playlists", pickSel);
+    const pick = (list && list.querySelector(pickSel)) || [...box.querySelectorAll(pickSel)].find((e) => e !== sw && !e.contains(sw));
+    for (const e of document.querySelectorAll('[data-vidauto="playlist-pick"]')) e.removeAttribute("data-vidauto");
     if (pick) pick.setAttribute("data-vidauto", "playlist-pick");
-    return JSON.stringify({ on, text: box.innerText });
+    return JSON.stringify({ on, text: box.innerText + "\\n" + (list ? list.innerText : "") });
   })()`) || "null");
   if (!fbFindSection(id, "Add to playlist", 'input[type="checkbox"], [role="switch"], [role="checkbox"]')) {
     throw new Error(`Couldn't find "Add to playlist"${dump(id)}`);
@@ -1000,12 +1004,22 @@ function facebook(item, review) {
     if (w.date === null || (w.time === null && w.timeKind !== "parts")) {
       throw new Error(`Couldn't find the schedule's date and time (text boxes on the page: ${w.inputs || "none"})${dump(id)}`);
     }
-    // the time first, then the date (clicking the time boxes after typing the date can put the old date back)
-    if (!sameClock(w.time, item.when)) fbSetWhen(id, "time", w.timeKind === "parts" ? fbTime(item.when) : timeLike(w.time, item.when), w.timeKind);
-    w = fbWhen(id);
-    if (w.date === null) throw new Error(`The date box went missing after setting the time (text boxes: ${w.inputs || "none"})${dump(id)}`);
+    // the date first (typed, then Return), then the time; if setting the time put the old date back, the date
+    // once more
+    const setTime = () => {
+      if (!sameClock(w.time, item.when)) fbSetWhen(id, "time", w.timeKind === "parts" ? fbTime(item.when) : timeLike(w.time, item.when), w.timeKind);
+      w = fbWhen(id);
+    };
     if (!sameDay(w.date, item.when)) fbSetDate(id, item.when, w);
     w = fbWhen(id);
+    if (w.date === null) throw new Error(`The date box went missing (text boxes: ${w.inputs || "none"})${dump(id)}`);
+    setTime();
+    if (!sameDay(w.date, item.when) && w.date !== null) {
+      log(`  (the date went back to ${w.date} after setting the time; setting it again)`);
+      fbSetDate(id, item.when, w);
+      w = fbWhen(id);
+      setTime();
+    }
     log(`  schedule set to ${w.date} ${w.time} (wanted ${day} ${time})`);
     if (!sameDay(w.date, item.when) || !sameClock(w.time, item.when)) {
       throw new Error(`The schedule shows ${w.date} ${w.time} instead of ${day} ${time}. Nothing was posted; ` +
