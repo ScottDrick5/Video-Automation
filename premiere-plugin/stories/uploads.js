@@ -577,162 +577,78 @@ function fbButton(id, words, last) {
   })()`) === "clicked";
 }
 
-// The schedule's date and time boxes: { date, time } as shown, plus where they are for clicking
+// The schedule's date and time: { date, time, dateKind, timeKind, inputs } as shown. Looks in text boxes first
+// ("Oct 12, 2026" or "10/12/2026"; "01:30 PM" or "13:30"), then in plain text under "Scheduling options" (a box you
+// click to edit). Marks them data-vidauto="date" / "time" for clicking and typing.
 const FB_WHEN_JS = `(function () {
   const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+  const isDate = (t) => /^[A-Z][a-z]{2,8}\\.? \\d{1,2}, \\d{4}$/.test(t) || /^\\d{1,2}\\/\\d{1,2}\\/\\d{2,4}$/.test(t);
+  const isTime = (t) => /^\\d{1,2}:\\d{2}(\\s*[AP]M)?$/i.test(t);
+  for (const e of document.querySelectorAll("[data-vidauto=date], [data-vidauto=time]")) e.removeAttribute("data-vidauto");
   const inputs = [...document.querySelectorAll("input")].filter(vis);
-  const date = inputs.find((e) => /^[A-Z][a-z]{2} \\d{1,2}, \\d{4}$/.test(e.value) || /date/i.test(e.getAttribute("aria-label") || e.placeholder || ""));
-  const time = inputs.find((e) => /^\\d{1,2}:\\d{2}\\s*[AP]M$/i.test(e.value) || /time/i.test(e.getAttribute("aria-label") || e.placeholder || ""));
-  const mark = (e, name) => { if (e) e.setAttribute("data-vidauto", name); };
-  mark(date, "date");
-  mark(time, "time");
-  return JSON.stringify({ date: date ? date.value : null, time: time ? time.value : null });
+  let date = inputs.find((e) => isDate(e.value.trim()));
+  let time = inputs.find((e) => isTime(e.value.trim()));
+  let dateKind = date ? "input" : "";
+  let timeKind = time ? "input" : "";
+  if (!date || !time) {
+    const leaves = [...document.querySelectorAll("span, div, button, [role]")].filter((e) => vis(e) && !e.children.length);
+    if (!date) { date = leaves.find((e) => isDate((e.innerText || "").trim())); if (date) dateKind = "text"; }
+    if (!time) { time = leaves.find((e) => isTime((e.innerText || "").trim())); if (time) timeKind = "text"; }
+  }
+  if (date) date.setAttribute("data-vidauto", "date");
+  if (time) time.setAttribute("data-vidauto", "time");
+  const val = (e) => (e ? (e.value !== undefined && e.tagName === "INPUT" ? e.value : e.innerText).trim() : null);
+  return JSON.stringify({ date: val(date), time: val(time), dateKind, timeKind,
+    inputs: inputs.map((e) => (e.type || "text") + "=" + JSON.stringify(e.value).slice(0, 30) + (e.getAttribute("aria-label") ? " (" + e.getAttribute("aria-label") + ")" : "")).join(", ") });
 })()`;
 
 function fbWhen(id) {
   return JSON.parse(js(id, FB_WHEN_JS) || "{}");
 }
 
-
-// Page code: the section (box) that has a heading with these exact words, e.g. "Tags" or "Add to playlist"
-const FB_SECTION_JS = `function section(words, inside) {
-    // the heading may read "Tags · optional"; take the smallest element that says it
-    const re = new RegExp("^" + words.replace(/[.*+?^$()|[\\]\\\\]/g, "\\\\$&") + "(\\\\s*[·•-][\\\\s\\\\S]*)?$", "i");
-    const labels = [...document.querySelectorAll("span, div, label, h2, h3, h4")].filter((e) => {
-      const r = e.getBoundingClientRect();
-      return r.width > 0 && re.test((e.innerText || "").trim()) && (e.innerText || "").length < 60;
-    });
-    labels.sort((a, b) => a.querySelectorAll("*").length - b.querySelectorAll("*").length);
-    for (const label of labels) {
-      let box = label.parentElement;
-      while (box && box !== document.body && !box.querySelector(inside)) box = box.parentElement;
-      if (box && box !== document.body) return box;
-    }
-    return null;
-  }`;
-
-// Scroll Business Suite's form down a bit (sections further down only appear once they're scrolled to)
-function fbScroll(id) {
-  js(id, `(function () {
-    for (const e of document.querySelectorAll("div")) {
-      const st = getComputedStyle(e);
-      if (e.scrollHeight > e.clientHeight + 50 && /(auto|scroll)/.test(st.overflowY)) e.scrollTop += 500;
-    }
-    window.scrollBy(0, 500);
-  })()`);
-  delay(1);
+// Same day / same time, whatever way they're written
+function sameDay(shown, ms) {
+  const d = new Date(ms);
+  const m = String(shown || "").match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  const p = m ? new Date(Number(m[3].length === 2 ? "20" + m[3] : m[3]), Number(m[1]) - 1, Number(m[2])) : new Date(Date.parse(String(shown || "").replace(".", "")));
+  return !isNaN(p) && p.getFullYear() === d.getFullYear() && p.getMonth() === d.getMonth() && p.getDate() === d.getDate();
+}
+function sameClock(shown, ms) {
+  const m = String(shown || "").trim().match(/^(\d{1,2}):(\d{2})\s*([AP]M)?$/i);
+  if (!m) return false;
+  let h = Number(m[1]) % (m[3] ? 12 : 24);
+  if (m[3] && /p/i.test(m[3])) h += 12;
+  const d = new Date(ms);
+  return h === d.getHours() && Number(m[2]) === d.getMinutes();
+}
+// What to type, in the same style the box already shows
+function dateLike(shown, ms) {
+  const d = new Date(ms);
+  return /\//.test(shown || "") ? `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}` : U.studioDate(ms);
+}
+function timeLike(shown, ms) {
+  const d = new Date(ms);
+  return /[AP]M/i.test(shown || "") ? fbTime(ms) : `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-// Wait (scrolling down) until a section shows; true if found
-function fbFindSection(id, words, inside) {
-  for (let i = 0; i < 20; i++) {
-    checkStop();
-    const found = js(id, `(function () { ${FB_SECTION_JS}
-      const box = section(${JSON.stringify(words)}, ${JSON.stringify(inside)});
-      if (!box) return "";
-      box.scrollIntoView({ block: "center" });
-      return "ok";
-    })()`);
-    if (found === "ok") return true;
-    fbScroll(id);
-  }
-  return false;
-}
-
-// The reel's Tags: add any of FB_TAGS that aren't there yet (type each one and press Return)
-function fbTags(id) {
-  const have = () => JSON.parse(js(id, `(function () { ${FB_SECTION_JS}
-    const box = section("Tags", "input");
-    if (!box) return "null";
-    box.querySelector("input").setAttribute("data-vidauto", "tags");
-    return JSON.stringify(box.innerText.split(/\\n/).map((t) => t.trim().toLowerCase()).filter(Boolean));
-  })()`) || "null");
-  if (!fbFindSection(id, "Tags", "input")) throw new Error(`Couldn't find the reel's Tags box${dump(id)}`);
-  delay(0.5);
-  let now = have();
-  if (!now) throw new Error(`Couldn't find the reel's Tags box${dump(id)}`);
-  const box = () => js(id, `(function () {
-    const e = document.querySelector('input[data-vidauto="tags"]');
-    if (!e) return "-";
-    e.scrollIntoView({ block: "center" });
-    e.focus();
-    return e.value;
-  })()`);
-  for (const tag of FB_TAGS) {
-    if (now.includes(tag.toLowerCase())) continue;
-    front(id);
-    if (box() === "-") throw new Error(`Couldn't find the reel's Tags box${dump(id)}`);
-    if (box()) {
-      // leftover text in the box: clear it first
-      keys.keystroke("a", { using: "command down" });
-      keys.keyCode(51); // Delete
-      delay(0.3);
-    }
-    keys.keystroke(tag);
-    delay(1.5); // let its suggestion list appear before pressing Return
-    // press Return until the tag shows as added (a slow suggestion list can swallow the first one)
-    for (let i = 0; i < 3; i++) {
-      keys.keyCode(36);
-      delay(1.2);
-      now = have() || now;
-      if (now.includes(tag.toLowerCase())) break;
-      box();
-    }
-    if (!now.includes(tag.toLowerCase())) {
-      keys.keystroke(","); // some tag boxes add the tag on a comma instead
-      delay(1.2);
-      now = have() || now;
-    }
-    if (!now.includes(tag.toLowerCase())) throw new Error(`Couldn't add the tag ${tag} (Tags shows: ${now.join(", ")})`);
-  }
-  const missing = FB_TAGS.filter((t) => !now.includes(t.toLowerCase()));
-  if (missing.length) throw new Error(`Couldn't add the tag(s) ${missing.join(", ")} (Tags shows: ${now.join(", ")})`);
-  log(`  tags: ${FB_TAGS.join(", ")}`);
-}
-
-// Share step: "Add to playlist" switched on, with the FB_PLAYLIST playlist chosen
-function fbPlaylist(id) {
-  const state = () => JSON.parse(js(id, `(function () { ${FB_SECTION_JS}
-    const box = section("Add to playlist", 'input[type="checkbox"], [role="switch"], [role="checkbox"]');
-    if (!box) return "null";
-    const sw = box.querySelector('input[type="checkbox"], [role="switch"], [role="checkbox"]');
-    sw.setAttribute("data-vidauto", "playlist-switch");
-    const on = sw.checked === true || sw.getAttribute("aria-checked") === "true";
-    const pick = box.querySelector('[role="combobox"], [aria-haspopup], select, [role="button"]');
-    if (pick) pick.setAttribute("data-vidauto", "playlist-pick");
-    return JSON.stringify({ on, text: box.innerText });
-  })()`) || "null");
-  if (!fbFindSection(id, "Add to playlist", 'input[type="checkbox"], [role="switch"], [role="checkbox"]')) {
-    throw new Error(`Couldn't find "Add to playlist"${dump(id)}`);
-  }
-  delay(0.5);
-  let st = state();
-  if (!st) throw new Error(`Couldn't find "Add to playlist"${dump(id)}`);
-  if (!st.on) {
-    jsClick(id, ['[data-vidauto="playlist-switch"]'], 'the "Add to playlist" switch');
-    delay(1.5);
-    st = state() || st;
-    if (!st.on) throw new Error(`Couldn't switch on "Add to playlist"${dump(id)}`);
-  }
-  if (!st.text.includes(FB_PLAYLIST)) {
-    jsClick(id, ['[data-vidauto="playlist-pick"]'], "the Playlists menu");
-    delay(1.5);
-    const picked = js(id, `(function () {
-      const want = ${JSON.stringify(FB_PLAYLIST.toLowerCase())};
-      const opt = [...document.querySelectorAll('[role="option"], [role="menuitem"], [role="menuitemcheckbox"], [role="checkbox"], span, div')]
-        .find((e) => e.getBoundingClientRect().width > 0 && (e.innerText || "").trim().toLowerCase() === want &&
-          !e.closest('[data-vidauto="playlist-pick"]'));
-      if (!opt) return "";
-      (opt.closest('[role="option"], [role="menuitem"], [role="menuitemcheckbox"], [role="checkbox"], label') || opt).click();
-      return "ok";
-    })()`);
+// Type into the date or time: a text box directly; plain text gets a real click first (which opens its box)
+function fbSetWhen(id, which, text, kind) {
+  if (kind === "input") {
+    typeInto(id, [`input[data-vidauto="${which}"]`], text, `the ${which} box`, true);
+  } else {
+    realClick(id, [`[data-vidauto="${which}"]`], `the ${which}`);
     delay(1);
-    keys.keyCode(53); // Escape: close the menu if it stays open
-    delay(1);
-    st = state() || st;
-    if (picked !== "ok" || !st.text.includes(FB_PLAYLIST)) throw new Error(`Couldn't choose the "${FB_PLAYLIST}" playlist${dump(id)}`);
+    const focused = js(id, `(document.activeElement && document.activeElement.tagName) || ""`);
+    if (!/INPUT|TEXTAREA/.test(focused)) throw new Error(`Clicking the ${which} didn't open a box to type in${dump(id)}`);
+    keys.keystroke("a", { using: "command down" });
+    delay(0.2);
+    keys.keystroke(text);
+    delay(0.4);
+    keys.keyCode(36);
   }
-  log(`  playlist: ${FB_PLAYLIST}`);
+  delay(0.8);
+  keys.keyCode(53); // Escape: close a calendar or time list if one opened
+  delay(0.8);
 }
 
 // "Oct 2, 2026" + "01:30 PM" the way Business Suite shows them
@@ -832,27 +748,23 @@ function facebook(item, review) {
     }
     const day = U.studioDate(item.when);
     const time = fbTime(item.when);
-    if (w.date === null || w.time === null) throw new Error(`Couldn't find the schedule's date and time boxes${dump(id)}`);
-    if (w.date !== day) {
-      typeInto(id, ['input[data-vidauto="date"]'], day, "the date box", true);
-      keys.keyCode(53); // Escape: close the calendar if it opened
-      delay(0.8);
+    if (w.date === null || w.time === null) {
+      throw new Error(`Couldn't find the schedule's date and time (text boxes on the page: ${w.inputs || "none"})${dump(id)}`);
     }
+    if (!sameDay(w.date, item.when)) fbSetWhen(id, "date", dateLike(w.date, item.when), w.dateKind);
     w = fbWhen(id);
-    if (!sameTime(w.time, time)) {
-      typeInto(id, ['input[data-vidauto="time"]'], time, "the time box", true);
-      delay(0.8);
-    }
+    if (w.time === null) throw new Error(`The time box went missing after setting the date (text boxes: ${w.inputs || "none"})${dump(id)}`);
+    if (!sameClock(w.time, item.when)) fbSetWhen(id, "time", timeLike(w.time, item.when), w.timeKind);
     w = fbWhen(id);
     log(`  schedule set to ${w.date} ${w.time} (wanted ${day} ${time})`);
-    if (w.date !== day || !sameTime(w.time, time)) {
+    if (!sameDay(w.date, item.when) || !sameClock(w.time, item.when)) {
       throw new Error(`The schedule shows ${w.date} ${w.time} instead of ${day} ${time}. Nothing was posted; ` +
         "fix the date and time in the open tab and click Schedule yourself, or close the tab");
     }
     fbPlaylist(id);
     // the playlist menu can shift things; check the date and time once more
     w = fbWhen(id);
-    if (w.date !== day || !sameTime(w.time, time)) {
+    if (!sameDay(w.date, item.when) || !sameClock(w.time, item.when)) {
       throw new Error(`The schedule changed to ${w.date} ${w.time} instead of ${day} ${time}. Nothing was posted; fix it in the open tab and click Schedule yourself, or close the tab`);
     }
 
