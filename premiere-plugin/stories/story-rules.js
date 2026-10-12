@@ -122,10 +122,32 @@ function cleanTitle(reply) {
   return null;
 }
 
-// ChatGPT's favourite from its list of titles: the one marked with a star or "(my favorite)", else the one it
-// calls the strongest/best in quotes, else the first one in the list.
+// The title in ChatGPT's "My top pick would be I Couldn't Marry Him. It's short, ..." sentence (also "my
+// favorite is ...", "I'd go with ...", in quotes or bold or not), or null
+function topPick(text) {
+  const lead = /\b(?:my\s+)?(?:top|personal|favou?rite|best|strongest)\s+(?:pick|choice|option|title)\s*(?:would\s+be|is|:)\s*:?\s*|\bI(?:'|’)d\s+(?:go|choose|pick)\s+(?:with\s+)?|\bmy\s+(?:pick|favou?rite)\s+(?:would\s+be|is)\s*:?\s*/i;
+  const m = String(text).match(lead);
+  if (!m) return null;
+  let rest = String(text).slice(m.index + m[0].length).replace(/^[*_\s]+/, "");
+  const quoted = rest.match(/^["“'‘]([^"”\n]{2,100}?)["”'’]/);
+  let title = quoted && quoted[1];
+  if (!title) {
+    // up to the end of the sentence: ". ", a "?" or "!" (kept, it's part of the title), " — ", ", " or the line's end
+    const m2 = rest.match(/^(.+?)(?:[*_]*\.(?:\s|$)|([?!])[*_]*(?:\s|$)|[*_]*\s+[—–-]\s|[*_]*,\s|[*_]*\n|$)/);
+    title = m2 ? m2[1] + (m2[2] || "") : null;
+  }
+  if (!title) return null;
+  title = title.replace(/[*_]+/g, "").replace(/[.]+$/, "").trim();
+  return title && wordCount(title) <= 12 ? cleanTitle(title) : null;
+}
+
+// ChatGPT's favourite from its list of titles: the one in its "My top pick would be ..." sentence, else the one
+// marked with a star or "(my favorite)", else the one it calls the strongest/best in quotes, else the first one
+// in the list.
 function favoriteTitle(reply) {
   const text = String(reply);
+  const pick = topPick(text);
+  if (pick) return pick;
   const lines = text.split(/\n/).map((l) => l.trim()).filter((l) => l);
   const marked = lines.find((l) => /⭐|★|\(my favou?rite\)/i.test(l));
   const tidy = (l) => cleanTitle(l.replace(/⭐|★|🌟|\uFE0F/g, "").replace(/\*?\(my favou?rite\)\*?/i, "").replace(/[_*]+\s*$/, ""));
@@ -198,6 +220,6 @@ function isLimitMessage(text) {
 if (typeof module !== "undefined") {
   module.exports = {
     SKIP_WARNINGS, MIN_WORDS, MAX_WORDS, cleanPostText, wordCount, contentWarnings, skipReason, pickStories,
-    FLAG_TITLE_WORDS, flaggedTitleWord, perspectiveOf, cleanTitle, favoriteTitle, folderName, nextFreeDates, weekBatch, isVoiceoverFile, voiceOfFile, isLimitMessage,
+    FLAG_TITLE_WORDS, flaggedTitleWord, perspectiveOf, cleanTitle, topPick, favoriteTitle, folderName, nextFreeDates, weekBatch, isVoiceoverFile, voiceOfFile, isLimitMessage,
   };
 }

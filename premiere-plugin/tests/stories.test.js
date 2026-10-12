@@ -90,3 +90,18 @@ test("titles with words that may get a video held back are flagged", () => {
   assert.strictEqual(r.flaggedTitleWord("A Skilled Liar's Last Shot-Glass"), "shot");
   assert.strictEqual(r.flaggedTitleWord("My Skilled Sister"), "");
 });
+
+test("ChatGPT's top pick sentence", () => {
+  const reply = `Here are a few title options:
+1. I Couldn't Marry Him
+2. The Wedding That Never Happened
+3. Walking Away at the Altar
+
+My top pick would be I Couldn't Marry Him. It's short, emotionally compelling, and creates immediate curiosity without giving away the entire story.`;
+  assert.strictEqual(r.favoriteTitle(reply), "I Couldn't Marry Him");
+  assert.strictEqual(r.favoriteTitle(reply.replace("I Couldn't Marry Him.", '"Walking Away at the Altar."')), "Walking Away at the Altar");
+  assert.strictEqual(r.favoriteTitle(reply.replace("I Couldn't Marry Him.", "**The Wedding That Never Happened**.")), "The Wedding That Never Happened");
+  assert.strictEqual(r.favoriteTitle("1. A\n2. B\n\nMy favorite is Choose Me Instead, because it hooks you."), "Choose Me Instead");
+  assert.strictEqual(r.favoriteTitle("Options:\n1. One Title\n2. Two Title\n\nI'd go with Two Title — it's punchier."), "Two Title");
+  assert.strictEqual(r.favoriteTitle("1. Why Did She Lie?\n2. Other\n\nMy top pick would be Why Did She Lie? It hooks people."), "Why Did She Lie?");
+});
