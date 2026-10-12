@@ -16,6 +16,8 @@ const UPLOADS_FILE = AITA_DIR + "/vidauto-uploads.json"; // what has been schedu
 const LOG_FILE = AITA_DIR + "/vidauto-uploads-log.txt";
 const YT_CHANNEL = "UCI3S3qXsupSQFBb4Qe2szpg";
 const FB_ASSET = "214107491779719"; // your Facebook page in Meta Business Suite
+const FB_TAGS = ["aita", "storytime", "redditstoryteller", "RelationshipDrama", "reddit"]; // the reel's Tags box
+const FB_PLAYLIST = "Full Videos";
 const LIMITS_FILE = AITA_DIR + "/vidauto-upload-limits.json"; // e.g. { "youtube": 15 }: most uploads per day
 const DEFAULT_DAILY_LIMIT = { youtube: 10, tiktok: 10, facebook: 10 };
 
@@ -590,6 +592,82 @@ function fbWhen(id) {
   return JSON.parse(js(id, FB_WHEN_JS) || "{}");
 }
 
+
+// Page code: the section (box) that has a heading with these exact words, e.g. "Tags" or "Add to playlist"
+const FB_SECTION_JS = `function section(words, inside) {
+    const want = words.toLowerCase();
+    const label = [...document.querySelectorAll("span, div, label, h2, h3")].find((e) => {
+      const r = e.getBoundingClientRect();
+      return r.width > 0 && !e.children.length && (e.innerText || "").trim().toLowerCase() === want;
+    });
+    if (!label) return null;
+    let box = label.parentElement;
+    while (box && box !== document.body && !box.querySelector(inside)) box = box.parentElement;
+    return box && box !== document.body ? box : null;
+  }`;
+
+// The reel's Tags: add any of FB_TAGS that aren't there yet (type each one and press Return)
+function fbTags(id) {
+  const have = () => JSON.parse(js(id, `(function () { ${FB_SECTION_JS}
+    const box = section("Tags", "input");
+    if (!box) return "null";
+    box.querySelector("input").setAttribute("data-vidauto", "tags");
+    return JSON.stringify(box.innerText.split(/\n/).map((t) => t.trim().toLowerCase()).filter(Boolean));
+  })()`) || "null");
+  let now = have();
+  if (!now) throw new Error(`Couldn't find the reel's Tags box${dump(id)}`);
+  for (const tag of FB_TAGS) {
+    if (now.includes(tag.toLowerCase())) continue;
+    typeInto(id, ['input[data-vidauto="tags"]'], tag, "the Tags box", true);
+    delay(0.8);
+    now = have() || now;
+  }
+  const missing = FB_TAGS.filter((t) => !now.includes(t.toLowerCase()));
+  if (missing.length) throw new Error(`Couldn't add the tag(s) ${missing.join(", ")} (Tags shows: ${now.join(", ")})`);
+  log(`  tags: ${FB_TAGS.join(", ")}`);
+}
+
+// Share step: "Add to playlist" switched on, with the FB_PLAYLIST playlist chosen
+function fbPlaylist(id) {
+  const state = () => JSON.parse(js(id, `(function () { ${FB_SECTION_JS}
+    const box = section("Add to playlist", 'input[type="checkbox"], [role="switch"], [role="checkbox"]');
+    if (!box) return "null";
+    const sw = box.querySelector('input[type="checkbox"], [role="switch"], [role="checkbox"]');
+    sw.setAttribute("data-vidauto", "playlist-switch");
+    const on = sw.checked === true || sw.getAttribute("aria-checked") === "true";
+    const pick = box.querySelector('[role="combobox"], [aria-haspopup], select, [role="button"]');
+    if (pick) pick.setAttribute("data-vidauto", "playlist-pick");
+    return JSON.stringify({ on, text: box.innerText });
+  })()`) || "null");
+  let st = state();
+  if (!st) throw new Error(`Couldn't find "Add to playlist"${dump(id)}`);
+  if (!st.on) {
+    jsClick(id, ['[data-vidauto="playlist-switch"]'], 'the "Add to playlist" switch');
+    delay(1.5);
+    st = state() || st;
+    if (!st.on) throw new Error(`Couldn't switch on "Add to playlist"${dump(id)}`);
+  }
+  if (!st.text.includes(FB_PLAYLIST)) {
+    jsClick(id, ['[data-vidauto="playlist-pick"]'], "the Playlists menu");
+    delay(1.5);
+    const picked = js(id, `(function () {
+      const want = ${JSON.stringify(FB_PLAYLIST.toLowerCase())};
+      const opt = [...document.querySelectorAll('[role="option"], [role="menuitem"], [role="menuitemcheckbox"], [role="checkbox"], span, div')]
+        .find((e) => e.getBoundingClientRect().width > 0 && (e.innerText || "").trim().toLowerCase() === want &&
+          !e.closest('[data-vidauto="playlist-pick"]'));
+      if (!opt) return "";
+      (opt.closest('[role="option"], [role="menuitem"], [role="menuitemcheckbox"], [role="checkbox"], label') || opt).click();
+      return "ok";
+    })()`);
+    delay(1);
+    keys.keyCode(53); // Escape: close the menu if it stays open
+    delay(1);
+    st = state() || st;
+    if (picked !== "ok" || !st.text.includes(FB_PLAYLIST)) throw new Error(`Couldn't choose the "${FB_PLAYLIST}" playlist${dump(id)}`);
+  }
+  log(`  playlist: ${FB_PLAYLIST}`);
+}
+
 // "Oct 2, 2026" + "01:30 PM" the way Business Suite shows them
 function fbTime(ms) {
   const t = U.studioTime(ms);
@@ -646,6 +724,7 @@ function facebook(item, review) {
       throw new Error(`The description didn't go in right (it shows: "${got.replace(/\s+/g, " ").slice(0, 150)}")`);
     }
     log(`  description: ${item.title} / Gameplay Video Credit: ${item.credit} / hashtags`);
+    fbTags(id);
 
     // Create -> Edit -> Share
     for (const step of ["Edit", "Share"]) {
@@ -683,8 +762,12 @@ function facebook(item, review) {
       throw new Error(`The schedule shows ${w.date} ${w.time} instead of ${day} ${time}. Nothing was posted; ` +
         "fix the date and time in the open tab and click Schedule yourself, or close the tab");
     }
-    const playlist = js(id, "document.body.innerText.includes('Full Videos') ? 'yes' : ''");
-    if (!playlist) log('  (the "Full Videos" playlist isn\'t selected; leaving it as it is)');
+    fbPlaylist(id);
+    // the playlist menu can shift things; check the date and time once more
+    w = fbWhen(id);
+    if (w.date !== day || !sameTime(w.time, time)) {
+      throw new Error(`The schedule changed to ${w.date} ${w.time} instead of ${day} ${time}. Nothing was posted; fix it in the open tab and click Schedule yourself, or close the tab`);
+    }
 
     if (review) {
       log("  TEST: everything is filled in. Check the description, date and time in the open Business Suite tab,");

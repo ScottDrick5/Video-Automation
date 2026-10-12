@@ -63,8 +63,10 @@ Tick where to upload under **Upload to** (YouTube, Facebook; both runs one after
 in the panel (or double-click `stories/Upload Videos.command` and type f or y), or tick **Upload at the end of Run**.
 
 **Facebook:** only the full video, at 1:30 PM Eastern on the folder's date. It opens Meta Business Suite's Create
-post, adds the video (Business Suite turns it into a reel), pastes the text below into the description, clicks Next
-twice, picks Schedule, sets the date and time and clicks Schedule. It checks the date and time before the last
+post, adds the video (Business Suite turns it into a reel), pastes the text below into the description, adds the tags
+aita, storytime, redditstoryteller, RelationshipDrama and reddit, clicks Next twice, picks Schedule, sets the date
+and time, switches on Add to playlist with "Full Videos" chosen, and clicks Schedule (tags and playlist are
+`FB_TAGS` / `FB_PLAYLIST` at the top of `stories/uploads.js`). It checks the date and time before the last
 click; if they don't match, nothing is posted and the tab stays open. With **Test: just one** it fills everything
 in and stops before the last click, so you check it and click Schedule yourself.
 
