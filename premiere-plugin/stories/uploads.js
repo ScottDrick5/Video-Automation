@@ -599,7 +599,21 @@ const FB_WHEN_JS = `(function () {
   if (date) date.setAttribute("data-vidauto", "date");
   if (time) time.setAttribute("data-vidauto", "time");
   const val = (e) => (e ? (e.value !== undefined && e.tagName === "INPUT" ? e.value : e.innerText).trim() : null);
-  return JSON.stringify({ date: val(date), time: val(time), dateKind, timeKind,
+  // Business Suite's time is three small boxes: hours, minutes and AM/PM
+  const part = (re) => inputs.find((e) => re.test((e.getAttribute("aria-label") || "").trim()));
+  const hours = part(/^hours?$/i);
+  const minutes = part(/^minutes?$/i);
+  const ampm = part(/meridiem|am.?pm/i);
+  let timeText = val(time);
+  if (!time && hours && minutes) {
+    timeKind = "parts";
+    hours.setAttribute("data-vidauto", "hours");
+    minutes.setAttribute("data-vidauto", "minutes");
+    if (ampm) ampm.setAttribute("data-vidauto", "ampm");
+    const pv = (e) => (e ? (e.value || e.getAttribute("aria-valuetext") || e.getAttribute("aria-valuenow") || "").trim() : "");
+    timeText = pv(hours) && pv(minutes) ? (pv(hours) + ":" + pv(minutes) + (ampm ? " " + pv(ampm) : "")) : "";
+  }
+  return JSON.stringify({ date: val(date), time: timeKind === "parts" ? timeText : timeText, dateKind, timeKind,
     inputs: inputs.map((e) => (e.type || "text") + "=" + JSON.stringify(e.value).slice(0, 30) + (e.getAttribute("aria-label") ? " (" + e.getAttribute("aria-label") + ")" : "")).join(", ") });
 })()`;
 
@@ -634,6 +648,22 @@ function timeLike(shown, ms) {
 
 // Type into the date or time: a text box directly; plain text gets a real click first (which opens its box)
 function fbSetWhen(id, which, text, kind) {
+  if (kind === "parts") {
+    // "01:30 PM" -> hours 01, minutes 30, AM/PM "P" (each box takes typed digits / a letter)
+    const m = text.match(/^(\d{1,2}):(\d{2})\s*([AP])?/i);
+    const parts = [["hours", m[1].padStart(2, "0")], ["minutes", m[2]]];
+    if (m[3]) parts.push(["ampm", m[3].toUpperCase()]);
+    for (const [name, value] of parts) {
+      if (!has(id, [`input[data-vidauto="${name}"]`])) continue;
+      realClick(id, [`input[data-vidauto="${name}"]`], `the time's ${name} box`);
+      delay(0.5);
+      keys.keystroke(value);
+      delay(0.6);
+    }
+    keys.keyCode(48); // Tab: leave the time boxes
+    delay(0.8);
+    return;
+  }
   if (kind === "input") {
     typeInto(id, [`input[data-vidauto="${which}"]`], text, `the ${which} box`, true);
   } else {
@@ -753,7 +783,8 @@ function fbPlaylist(id) {
   const state = () => JSON.parse(js(id, `(function () { ${FB_SECTION_JS}
     const box = section("Add to playlist", 'input[type="checkbox"], [role="switch"], [role="checkbox"]');
     if (!box) return "null";
-    const sw = box.querySelector('input[type="checkbox"], [role="switch"], [role="checkbox"]');
+    const sw = document.querySelector('input[type="checkbox"][aria-label="Add to playlist"]') ||
+      box.querySelector('input[type="checkbox"], [role="switch"], [role="checkbox"]');
     sw.setAttribute("data-vidauto", "playlist-switch");
     const on = sw.checked === true || sw.getAttribute("aria-checked") === "true";
     const pick = box.querySelector('[role="combobox"], [aria-haspopup], select, [role="button"]');
@@ -890,13 +921,13 @@ function facebook(item, review) {
     }
     const day = U.studioDate(item.when);
     const time = fbTime(item.when);
-    if (w.date === null || w.time === null) {
+    if (w.date === null || (w.time === null && w.timeKind !== "parts")) {
       throw new Error(`Couldn't find the schedule's date and time (text boxes on the page: ${w.inputs || "none"})${dump(id)}`);
     }
     if (!sameDay(w.date, item.when)) fbSetWhen(id, "date", dateLike(w.date, item.when), w.dateKind);
     w = fbWhen(id);
-    if (w.time === null) throw new Error(`The time box went missing after setting the date (text boxes: ${w.inputs || "none"})${dump(id)}`);
-    if (!sameClock(w.time, item.when)) fbSetWhen(id, "time", timeLike(w.time, item.when), w.timeKind);
+    if (w.time === null && w.timeKind !== "parts") throw new Error(`The time box went missing after setting the date (text boxes: ${w.inputs || "none"})${dump(id)}`);
+    if (!sameClock(w.time, item.when)) fbSetWhen(id, "time", w.timeKind === "parts" ? fbTime(item.when) : timeLike(w.time, item.when), w.timeKind);
     w = fbWhen(id);
     log(`  schedule set to ${w.date} ${w.time} (wanted ${day} ${time})`);
     if (!sameDay(w.date, item.when) || !sameClock(w.time, item.when)) {
