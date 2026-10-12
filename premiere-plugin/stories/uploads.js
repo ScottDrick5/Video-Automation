@@ -645,7 +645,7 @@ function fbTags(id) {
     const box = section("Tags", "input");
     if (!box) return "null";
     box.querySelector("input").setAttribute("data-vidauto", "tags");
-    return JSON.stringify(box.innerText.split(/\n/).map((t) => t.trim().toLowerCase()).filter(Boolean));
+    return JSON.stringify(box.innerText.split(/\\n/).map((t) => t.trim().toLowerCase()).filter(Boolean));
   })()`) || "null");
   if (!fbFindSection(id, "Tags", "input")) throw new Error(`Couldn't find the reel's Tags box${dump(id)}`);
   delay(0.5);
