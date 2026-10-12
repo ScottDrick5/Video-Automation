@@ -127,9 +127,9 @@ on createCaptions()
 			else
 				set {px, py, pw, ph} to my numbersIn(panelAt)
 				-- the button sits in the middle of the panel's empty Captions area (below its tabs and toolbar)
-				set bx to px + (pw div 2)
-				set by to py + 136 + ((ph - 189) div 2)
-				logLine("Clicking 'Create captions from transcript' in the Text panel at " & panelAt & ": " & my winCmd("click " & bx & " " & by))
+				set btnX to px + (pw div 2)
+				set btnY to py + 136 + ((ph - 189) div 2)
+				logLine("Clicking 'Create captions from transcript' in the Text panel at " & panelAt & ": " & my winCmd("click " & btnX & " " & btnY))
 			end if
 			delay 2
 			set found to my winCmd("find " & ww & " " & wh & " 15")
