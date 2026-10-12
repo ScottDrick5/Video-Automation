@@ -589,6 +589,8 @@ const FB_WHEN_JS = `(function () {
   const named = (e, re) => re.test((e.getAttribute("aria-label") || "") + " " + (e.placeholder || ""));
   let date = inputs.find((e) => isDate(e.value.trim())) || inputs.find((e) => named(e, /date/i));
   let time = inputs.find((e) => isTime(e.value.trim())) || inputs.find((e) => named(e, /time/i));
+  if (!date) date = inputs.find((e) => (e.type === "text" || !e.type) && !/hours?|minutes?|meridiem/i.test(e.getAttribute("aria-label") || "") &&
+    !e.closest('[contenteditable="true"]') && e.getAttribute("data-vidauto") !== "tags" && /\\d{4}|[A-Z][a-z]{2}/.test(e.value));
   let dateKind = date ? "input" : "";
   let timeKind = time ? "input" : "";
   if (!date || !time) {
@@ -687,26 +689,18 @@ function fbSetWhen(id, which, text, kind) {
 function fbSetDate(id, ms, w) {
   const text = dateLike(w.date, ms);
   if (w.dateKind === "input") {
-    typeInto(id, ['input[data-vidauto="date"]'], text, "the date box", false);
-    keys.keyCode(48); // Tab
-    delay(1);
-    if (sameDay(fbWhen(id).date, ms)) return;
-    // second way: select the old date, delete it, type the new one slowly, press Return
-    fbWhen(id);
+    // type it and press Return (that's what keeps it; leaving with Tab or Escape puts the old date back)
     realClick(id, ['input[data-vidauto="date"]'], "the date box");
-    delay(0.8);
-    js(id, `(function () { const e = document.querySelector('input[data-vidauto="date"]'); if (e) { e.focus(); e.select(); } })()`);
-    keys.keyCode(51); // Delete
-    delay(0.3);
-    for (const ch of text) {
-      keys.keystroke(ch);
-      delay(0.08);
-    }
-    delay(0.5);
+    delay(0.6);
+    keys.keystroke("a", { using: "command down" });
+    delay(0.2);
+    keys.keystroke(text);
+    delay(0.6);
     keys.keyCode(36); // Return
-    delay(1);
-    if (sameDay(fbWhen(id).date, ms)) return;
-    log(`  (typing the date didn't stick: it shows ${fbWhen(id).date}; trying its calendar)`);
+    delay(1.5);
+    const now = fbWhen(id);
+    if (sameDay(now.date, ms)) return;
+    log(`  (typing the date didn't stick: it shows ${now.date}; trying its calendar)`);
   }
   const d = new Date(ms);
   const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -1006,10 +1000,11 @@ function facebook(item, review) {
     if (w.date === null || (w.time === null && w.timeKind !== "parts")) {
       throw new Error(`Couldn't find the schedule's date and time (text boxes on the page: ${w.inputs || "none"})${dump(id)}`);
     }
-    if (!sameDay(w.date, item.when)) fbSetDate(id, item.when, w);
-    w = fbWhen(id);
-    if (w.time === null && w.timeKind !== "parts") throw new Error(`The time box went missing after setting the date (text boxes: ${w.inputs || "none"})${dump(id)}`);
+    // the time first, then the date (clicking the time boxes after typing the date can put the old date back)
     if (!sameClock(w.time, item.when)) fbSetWhen(id, "time", w.timeKind === "parts" ? fbTime(item.when) : timeLike(w.time, item.when), w.timeKind);
+    w = fbWhen(id);
+    if (w.date === null) throw new Error(`The date box went missing after setting the time (text boxes: ${w.inputs || "none"})${dump(id)}`);
+    if (!sameDay(w.date, item.when)) fbSetDate(id, item.when, w);
     w = fbWhen(id);
     log(`  schedule set to ${w.date} ${w.time} (wanted ${day} ${time})`);
     if (!sameDay(w.date, item.when) || !sameClock(w.time, item.when)) {
