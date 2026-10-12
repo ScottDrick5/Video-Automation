@@ -651,11 +651,39 @@ function fbTags(id) {
   delay(0.5);
   let now = have();
   if (!now) throw new Error(`Couldn't find the reel's Tags box${dump(id)}`);
+  const box = () => js(id, `(function () {
+    const e = document.querySelector('input[data-vidauto="tags"]');
+    if (!e) return "-";
+    e.scrollIntoView({ block: "center" });
+    e.focus();
+    return e.value;
+  })()`);
   for (const tag of FB_TAGS) {
     if (now.includes(tag.toLowerCase())) continue;
-    typeInto(id, ['input[data-vidauto="tags"]'], tag, "the Tags box", true);
-    delay(0.8);
-    now = have() || now;
+    front(id);
+    if (box() === "-") throw new Error(`Couldn't find the reel's Tags box${dump(id)}`);
+    if (box()) {
+      // leftover text in the box: clear it first
+      keys.keystroke("a", { using: "command down" });
+      keys.keyCode(51); // Delete
+      delay(0.3);
+    }
+    keys.keystroke(tag);
+    delay(1.5); // let its suggestion list appear before pressing Return
+    // press Return until the tag shows as added (a slow suggestion list can swallow the first one)
+    for (let i = 0; i < 3; i++) {
+      keys.keyCode(36);
+      delay(1.2);
+      now = have() || now;
+      if (now.includes(tag.toLowerCase())) break;
+      box();
+    }
+    if (!now.includes(tag.toLowerCase())) {
+      keys.keystroke(","); // some tag boxes add the tag on a comma instead
+      delay(1.2);
+      now = have() || now;
+    }
+    if (!now.includes(tag.toLowerCase())) throw new Error(`Couldn't add the tag ${tag} (Tags shows: ${now.join(", ")})`);
   }
   const missing = FB_TAGS.filter((t) => !now.includes(t.toLowerCase()));
   if (missing.length) throw new Error(`Couldn't add the tag(s) ${missing.join(", ")} (Tags shows: ${now.join(", ")})`);
