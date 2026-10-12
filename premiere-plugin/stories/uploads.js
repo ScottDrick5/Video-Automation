@@ -596,16 +596,48 @@ function fbWhen(id) {
 
 // Page code: the section (box) that has a heading with these exact words, e.g. "Tags" or "Add to playlist"
 const FB_SECTION_JS = `function section(words, inside) {
-    const want = words.toLowerCase();
-    const label = [...document.querySelectorAll("span, div, label, h2, h3")].find((e) => {
+    // the heading may read "Tags · optional"; take the smallest element that says it
+    const re = new RegExp("^" + words.replace(/[.*+?^$()|[\\]\\\\]/g, "\\\\$&") + "(\\\\s*[·•-][\\\\s\\\\S]*)?$", "i");
+    const labels = [...document.querySelectorAll("span, div, label, h2, h3, h4")].filter((e) => {
       const r = e.getBoundingClientRect();
-      return r.width > 0 && !e.children.length && (e.innerText || "").trim().toLowerCase() === want;
+      return r.width > 0 && re.test((e.innerText || "").trim()) && (e.innerText || "").length < 60;
     });
-    if (!label) return null;
-    let box = label.parentElement;
-    while (box && box !== document.body && !box.querySelector(inside)) box = box.parentElement;
-    return box && box !== document.body ? box : null;
+    labels.sort((a, b) => a.querySelectorAll("*").length - b.querySelectorAll("*").length);
+    for (const label of labels) {
+      let box = label.parentElement;
+      while (box && box !== document.body && !box.querySelector(inside)) box = box.parentElement;
+      if (box && box !== document.body) return box;
+    }
+    return null;
   }`;
+
+// Scroll Business Suite's form down a bit (sections further down only appear once they're scrolled to)
+function fbScroll(id) {
+  js(id, `(function () {
+    for (const e of document.querySelectorAll("div")) {
+      const st = getComputedStyle(e);
+      if (e.scrollHeight > e.clientHeight + 50 && /(auto|scroll)/.test(st.overflowY)) e.scrollTop += 500;
+    }
+    window.scrollBy(0, 500);
+  })()`);
+  delay(1);
+}
+
+// Wait (scrolling down) until a section shows; true if found
+function fbFindSection(id, words, inside) {
+  for (let i = 0; i < 20; i++) {
+    checkStop();
+    const found = js(id, `(function () { ${FB_SECTION_JS}
+      const box = section(${JSON.stringify(words)}, ${JSON.stringify(inside)});
+      if (!box) return "";
+      box.scrollIntoView({ block: "center" });
+      return "ok";
+    })()`);
+    if (found === "ok") return true;
+    fbScroll(id);
+  }
+  return false;
+}
 
 // The reel's Tags: add any of FB_TAGS that aren't there yet (type each one and press Return)
 function fbTags(id) {
@@ -615,6 +647,8 @@ function fbTags(id) {
     box.querySelector("input").setAttribute("data-vidauto", "tags");
     return JSON.stringify(box.innerText.split(/\n/).map((t) => t.trim().toLowerCase()).filter(Boolean));
   })()`) || "null");
+  if (!fbFindSection(id, "Tags", "input")) throw new Error(`Couldn't find the reel's Tags box${dump(id)}`);
+  delay(0.5);
   let now = have();
   if (!now) throw new Error(`Couldn't find the reel's Tags box${dump(id)}`);
   for (const tag of FB_TAGS) {
@@ -640,6 +674,10 @@ function fbPlaylist(id) {
     if (pick) pick.setAttribute("data-vidauto", "playlist-pick");
     return JSON.stringify({ on, text: box.innerText });
   })()`) || "null");
+  if (!fbFindSection(id, "Add to playlist", 'input[type="checkbox"], [role="switch"], [role="checkbox"]')) {
+    throw new Error(`Couldn't find "Add to playlist"${dump(id)}`);
+  }
+  delay(0.5);
   let st = state();
   if (!st) throw new Error(`Couldn't find "Add to playlist"${dump(id)}`);
   if (!st.on) {
