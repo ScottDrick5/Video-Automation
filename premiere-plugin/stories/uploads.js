@@ -1081,6 +1081,14 @@ function run(argv) {
   folders.forEach((f) => log(`  ${f.name}: gameplay credit "${f.credit || "?"}" (${f.creditNote})`));
   missing.forEach((m) => log(`  NO CREDIT for ${m}: in the VidAuto panel type the creator's name next to "Gameplay credit" and click Set, then run Upload again.`));
   plan.skipped.forEach((s) => log(`  skipped: ${s}`));
+  if (!items.length) {
+    // say why, so "nothing to upload" doesn't look like the upload did nothing
+    const why = [];
+    if (missing.size) why.push(`set the gameplay credit for ${[...missing].join(", ")} in the panel`);
+    if (plan.skipped.some((x) => /too soon|already past/.test(x))) why.push("some videos are due too soon to schedule (post those by hand)");
+    if (plan.items.length && !room) why.push(`the daily limit of ${limits[platform]} is used up`);
+    return `Nothing to upload${why.length ? ": " + why.join("; ") : " (everything is already scheduled)"}.`;
+  }
 
   // YouTube already said "limit reached" today: don't try again until tomorrow
   if (record.limitHit && record.limitHit[platform] === today && items.length) {
@@ -1104,7 +1112,6 @@ function run(argv) {
   if (review) {
     // test: one video, filled in, you click Schedule
     const item = items[0];
-    if (!item) return "Nothing to upload.";
     log(`${item.file} -> ${U.studioDate(item.when)} ${U.studioTime(item.when)}`);
     const site = platform === "facebook" ? "Business Suite" : "YouTube";
     try {
