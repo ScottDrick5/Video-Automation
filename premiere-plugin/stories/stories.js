@@ -192,23 +192,34 @@ const STATE_JS = `(function (sentEnd) {
   let text = last ? last.innerText : "";
   let n = msgs.length;
   let how = "reply boxes";
-  // Fallback when ChatGPT's reply boxes can't be found: the page text after the end of what we sent
+  let seen = false;
+  // Fallback when ChatGPT's reply boxes can't be found: the page text after the end of what we sent.
+  // Matched on letters and digits only, since ChatGPT can show your message with different spaces and line breaks.
   if (!n && sentEnd) {
     const main = (document.querySelector("main") || document.body).innerText;
-    const at = main.lastIndexOf(sentEnd);
-    if (at < 0 && !window.__vaExpanded) {
-      // a long message is shown cut short with "Show more": open it so its end can be found
-      window.__vaExpanded = true;
-      for (const b of document.querySelectorAll("main button")) if (/^show more$/i.test(b.innerText.trim())) b.click();
-    }
-    if (at >= 0) {
-      text = main.slice(at + sentEnd.length).replace(/\\n[^\\n]*(ChatGPT can make mistakes|Ask anything|Message ChatGPT)[\\s\\S]*$/i, "").trim();
+    const squash = (s) => {
+      let out = "";
+      const at = [];
+      for (let i = 0; i < s.length; i++) if (/[\\p{L}\\p{N}]/u.test(s[i])) { out += s[i].toLowerCase(); at.push(i); }
+      return { out, at };
+    };
+    const key = squash(sentEnd).out.slice(-40);
+    const page = squash(main);
+    const k = key ? page.out.lastIndexOf(key) : -1;
+    if (k < 0) {
+      // a long message is shown cut short with "Show more": open it so its end can be found (it may appear late)
+      for (const b of document.querySelectorAll("main button")) if (/^show (more|full)/i.test(b.innerText.trim())) b.click();
+    } else {
+      const after = page.at[k + key.length - 1] + 1;
+      text = main.slice(after).replace(/^[^\\n]*/, "")
+        .replace(/\\n[^\\n]*(ChatGPT can make mistakes|Ask anything|Message ChatGPT)[\\s\\S]*$/i, "").trim();
       n = text.length > 20 ? 1 : 0;
       how = "page text";
     }
+    seen = k >= 0;
   }
   const stop = !!document.querySelector('[data-testid="stop-button"], button[aria-label="Stop streaming"], button[aria-label="Stop generating"]');
-  return JSON.stringify({ n, how, users: turns("user").length, stop, text,
+  return JSON.stringify({ n, how, seen, users: turns("user").length, stop, text,
     editor: !!findEditor(), url: location.href, body: document.body.innerText.slice(-1500) });
 })`;
 
@@ -257,7 +268,6 @@ function waitForEditor(id) {
 // ready(reply) says whether the reply is the real answer (not "Thinking..."); ask keeps waiting until it is.
 function ask(id, text, ready) {
   showTab(id);
-  js(id, "window.__vaExpanded = false; 'ok'");
   const before = chatState(id).n || 0;
   const typed = Number(js(id, `(function (text) {
     ${FIND_EDITOR_JS}
@@ -334,7 +344,7 @@ function ask(id, text, ready) {
 
   // wait for the reply to start...
   log("  sent; waiting for ChatGPT's reply...");
-  const sentEnd = text.trim().slice(-60).trim();
+  const sentEnd = text.trim().slice(-200);
   const started = (st) => (st.how === "page text" ? st.n > 0 : st.n > before);
   let end = Date.now() + 120000;
   let s = chatState(id, sentEnd);
@@ -350,7 +360,8 @@ function ask(id, text, ready) {
       infoSaved = true;
     }
     if (Date.now() > note) {
-      log(`  still waiting for the reply to show (replies found: ${s.n}, your messages: ${s.users})`);
+      log(`  still waiting for the reply to show (replies found: ${s.n}, your messages: ${s.users}, ` +
+        `end of your message on the page: ${s.seen ? "yes" : "no"}, ChatGPT writing: ${s.stop ? "yes" : "no"})`);
       note = Date.now() + 30000;
     }
   }
@@ -588,7 +599,7 @@ function run(argv) {
   const dates = asked ? R.nextFreeDates(new Date(), taken, asked) : R.weekBatch(new Date(), taken);
   const count = dates.length;
 
-  log("(Get Stories version 10-11d)");
+  log("(Get Stories version 11-02a)");
   log(`=== Getting ${count} stor${count === 1 ? "y" : "ies"} for ${dates.join(", ")}`);
   let posts;
   try {
