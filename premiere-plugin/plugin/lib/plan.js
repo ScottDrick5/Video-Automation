@@ -113,7 +113,9 @@ function timecodeToSeconds(tc, fps = 29.97) {
   if (parts.length < 2 || parts.length > 4 || parts.some((x) => !/^\d+$/.test(x))) return null;
   const n = parts.map(Number);
   if (parts.length === 2) return n[0] * 60 + n[1];
-  const [h, mi, s, f] = parts.length === 4 ? n : [0, ...n];
+  // three numbers are hours:minutes:seconds, the way times are written in the log (1:54:18)
+  if (parts.length === 3) return n[0] * 3600 + n[1] * 60 + n[2];
+  const [h, mi, s, f] = n;
   const nominal = Math.round(fps);
   let frames = (h * 3600 + mi * 60 + s) * nominal + f;
   if (nominal !== fps) {

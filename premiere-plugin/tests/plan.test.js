@@ -63,10 +63,14 @@ test("drop-frame timecode converts to real seconds", () => {
 });
 
 test("timecode can be typed in several ways", () => {
-  for (const tc of ["00;07;45;01", "7;45;01", "00:07:45:01", "7:45:01"]) {
+  for (const tc of ["00;07;45;01", "00:07:45:01", "0:7:45:01"]) {
     assert.ok(Math.abs(timecodeToSeconds(tc) - 465.03) < 0.1, tc);
   }
   assert.strictEqual(timecodeToSeconds("7:45"), 465);
+  // three numbers: hours, minutes, seconds (as the log writes them), not minutes:seconds:frames
+  assert.strictEqual(timecodeToSeconds("1:54:18"), 6858);
+  assert.strictEqual(timecodeToSeconds("01:54:18"), 6858);
+  assert.strictEqual(timecodeToSeconds("2;31;32"), 9092);
   assert.strictEqual(timecodeToSeconds("seven"), null);
 });
 

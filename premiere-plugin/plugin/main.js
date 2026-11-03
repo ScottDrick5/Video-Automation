@@ -46,7 +46,7 @@ const ARROW_TRACK = 2; // V3
 const ARROW_SECONDS = 5;
 const CLIP_ARROW_AT = 5; // seconds into each clip
 const TICKS_PER_SECOND = 254016000000;
-const PLUGIN_VERSION = "0.9.1";
+const PLUGIN_VERSION = "0.9.2";
 
 const state = { clip: null, transcript: null, cut: null, sequence: null };
 
@@ -1434,7 +1434,7 @@ async function setUsedUpTo() {
     return;
   }
   if (seconds === null) {
-    log(`Couldn't read "${tc}" as a timecode. Type it like 00;07;45;01 or 7:45:01`);
+    log(`Couldn't read "${tc}" as a timecode. Type it like 1:54:18 (hours:minutes:seconds) or 01;54;18;00`);
     return;
   }
   const usage = await loadUsage();
