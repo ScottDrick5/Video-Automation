@@ -107,9 +107,16 @@ function perspectiveOf(reply) {
   return /^(female|woman)$/i.test(m[1]) ? "female" : "male";
 }
 
+// The page's own labels around a reply ("ChatGPT said:", "You said:", "Thought for 5s"), which aren't ChatGPT's words
+const PAGE_LABEL = /^(chatgpt|you)\s+said\s*:?$|^thought for\b.{0,30}$/i;
+function withoutPageLabels(text) {
+  return String(text).split(/\n/).filter((l) => !PAGE_LABEL.test(l.trim())).join("\n");
+}
+
 // A title from ChatGPT's answer: first real line, without quotes, numbering, "Title:" or markdown.
+// Lines ending in ":" are headings ("Here are a few options:"), not titles.
 function cleanTitle(reply) {
-  const lines = String(reply).split(/\n/).map((l) => l.trim()).filter((l) => l);
+  const lines = withoutPageLabels(reply).split(/\n/).map((l) => l.trim()).filter((l) => l);
   for (let line of lines) {
     line = line
       .replace(/\*\*|__|`/g, "")
@@ -117,7 +124,7 @@ function cleanTitle(reply) {
       .replace(/^(best\s+)?title\s*[:\-–]\s*/i, "")
       .replace(/^["“'‘]+|["”'’]+$/g, "")
       .trim();
-    if (line && wordCount(line) <= 12) return line;
+    if (line && !/:$/.test(line) && wordCount(line) <= 12) return line;
   }
   return null;
 }
@@ -145,7 +152,7 @@ function topPick(text) {
 // marked with a star or "(my favorite)", else the one it calls the strongest/best in quotes, else the first one
 // in the list.
 function favoriteTitle(reply) {
-  const text = String(reply);
+  const text = withoutPageLabels(reply);
   const pick = topPick(text);
   if (pick) return pick;
   const lines = text.split(/\n/).map((l) => l.trim()).filter((l) => l);

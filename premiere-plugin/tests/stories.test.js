@@ -105,3 +105,10 @@ My top pick would be I Couldn't Marry Him. It's short, emotionally compelling, a
   assert.strictEqual(r.favoriteTitle("Options:\n1. One Title\n2. Two Title\n\nI'd go with Two Title — it's punchier."), "Two Title");
   assert.strictEqual(r.favoriteTitle("1. Why Did She Lie?\n2. Other\n\nMy top pick would be Why Did She Lie? It hooks people."), "Why Did She Lie?");
 });
+
+test("the page's 'ChatGPT said:' label is never taken as the title", () => {
+  assert.strictEqual(r.favoriteTitle("ChatGPT said:\nShe Tried to Get Me Fired"), "She Tried to Get Me Fired");
+  assert.strictEqual(r.favoriteTitle("ChatGPT said:\n\nHere's a good one:\n\n**The Pizza Standoff**"), "The Pizza Standoff");
+  assert.strictEqual(r.favoriteTitle("ChatGPT said:\nThought for 4s\n\"Not My Job\""), "Not My Job");
+  assert.strictEqual(r.favoriteTitle("ChatGPT said:"), null);
+});

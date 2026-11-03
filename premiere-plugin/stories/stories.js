@@ -211,7 +211,7 @@ const STATE_JS = `(function (sentEnd) {
       for (const b of document.querySelectorAll("main button")) if (/^show (more|full)/i.test(b.innerText.trim())) b.click();
     } else {
       const after = page.at[k + key.length - 1] + 1;
-      text = main.slice(after).replace(/^[^\\n]*/, "")
+      text = main.slice(after).replace(/^[^\\n]*/, "").replace(/^\\s*(ChatGPT said:?|Thought for[^\\n]*)\\s*\\n/gi, "")
         .replace(/\\n[^\\n]*(ChatGPT can make mistakes|Ask anything|Message ChatGPT)[\\s\\S]*$/i, "").trim();
       n = text.length > 20 ? 1 : 0;
       how = "page text";
@@ -599,7 +599,7 @@ function run(argv) {
   const dates = asked ? R.nextFreeDates(new Date(), taken, asked) : R.weekBatch(new Date(), taken);
   const count = dates.length;
 
-  log("(Get Stories version 11-02a)");
+  log("(Get Stories version 11-03a)");
   log(`=== Getting ${count} stor${count === 1 ? "y" : "ies"} for ${dates.join(", ")}`);
   let posts;
   try {
