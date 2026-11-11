@@ -1,6 +1,8 @@
 // Rules for the Upload step (which videos go where and when, titles and descriptions). Plain JavaScript with no
 // Mac or browser parts, so it can be tested with Node and loaded by uploads.js on the Mac.
 
+const RULES_VERSION = "11-11b"; // shown in the upload log, to check the newest copy is installed
+
 // Posting times (Eastern), [hour, minute] on the date folder's date
 const TIMES = {
   youtube: { full: [11, 30], parts: [[13, 30], [15, 30], [17, 30], [19, 30], [21, 30]] },
@@ -115,5 +117,5 @@ function studioTime(ms) {
 }
 
 if (typeof module !== "undefined") {
-  module.exports = { TIMES, MAX_DAYS_AHEAD, HASHTAGS, folderDay, videoInfo, description, withCredit, creditFromAuthor, uploadPlan, studioDate, studioTime };
+  module.exports = { RULES_VERSION, TIMES, MAX_DAYS_AHEAD, HASHTAGS, folderDay, videoInfo, description, withCredit, creditFromAuthor, uploadPlan, studioDate, studioTime };
 }

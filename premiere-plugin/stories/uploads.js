@@ -1291,6 +1291,7 @@ function run(argv) {
   const here = argv[argv.length - 1] || ".";
   U = eval(`(function () { var module = { exports: {} }; ${readText(here + "/upload-rules.js")}
     return module.exports; })()`);
+  log(`(Upload version 11-11b, rules ${U.RULES_VERSION || "old"})`);
   if (!["youtube", "facebook", "tiktok"].includes(platform)) return `Uploading to ${platform} isn't built yet.`;
 
   const record = JSON.parse(readText(UPLOADS_FILE) || '{"uploads":[]}');
