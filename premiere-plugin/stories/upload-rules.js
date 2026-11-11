@@ -51,16 +51,24 @@ function creditFromAuthor(author) {
   return a.split(/\s+[-–|]\s+/)[0].trim() || null;
 }
 
-// Everything to upload to one platform, earliest first.
+// Everything to upload to one platform, earliest first. Starts with tomorrow's folder: today's videos are never
+// scheduled (post those by hand).
 // folders: [{ name, files: [...], credit }] (finished date folders); uploaded: Set of keys already done;
 // now: Date. Returns { items: [{ key, folder, file, title, description, when }], skipped: [text] }
 function uploadPlan(platform, folders, uploaded, now) {
   const times = TIMES[platform];
   const items = [];
   const skipped = [];
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   for (const f of folders) {
     const day = folderDay(f.name);
     if (!day) continue;
+    if (day <= today) {
+      if (day.getTime() === today.getTime() && f.files.some((x) => videoInfo(x))) {
+        skipped.push(`${f.name}: today's videos aren't scheduled (uploads start with tomorrow's); post them by hand`);
+      }
+      continue;
+    }
     for (const file of f.files) {
       const v = videoInfo(file);
       if (!v) continue;

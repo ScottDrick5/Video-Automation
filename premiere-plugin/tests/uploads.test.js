@@ -46,10 +46,13 @@ test("Facebook gets only the full video at 1:30 PM; done uploads and past times 
   assert.deepStrictEqual(fb.items.map((i) => u.studioTime(i.when)), ["1:30 PM"]);
   const done = new Set(["youtube|10-02-26|" + files[3]]);
   assert.strictEqual(u.uploadPlan("youtube", [{ name: "10-02-26", files, credit: "Orbital" }], done, now).items.length, 2);
+  // today's folder is never scheduled, even its later parts: uploads start with tomorrow's
   const noon = new Date(2026, 8, 29, 12, 0);
-  const late = u.uploadPlan("youtube", [{ name: "9-29-26", files, credit: "Orbital" }], new Set(), noon);
-  assert.deepStrictEqual(late.items.map((i) => u.studioTime(i.when)), ["1:30 PM", "3:30 PM"]);
-  assert.match(late.skipped[0], /Full Video.*too soon or already past/);
+  const today = u.uploadPlan("youtube", [{ name: "9-29-26", files, credit: "Orbital" }], new Set(), noon);
+  assert.deepStrictEqual(today.items, []);
+  assert.match(today.skipped[0], /9-29-26: today's videos aren't scheduled/);
+  const tomorrow = u.uploadPlan("tiktok", [{ name: "9-29-26", files, credit: "Orbital" }, { name: "9-30-26", files, credit: "Orbital" }], new Set(), noon);
+  assert.ok(tomorrow.items.length > 0 && tomorrow.items.every((i) => i.folder === "9-30-26"));
 });
 
 test("TikTok gets the full video and the parts at YouTube's times, but only up to 10 days ahead", () => {

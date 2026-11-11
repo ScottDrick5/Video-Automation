@@ -582,7 +582,9 @@ function fbButton(id, words, last) {
 // click to edit). Marks them data-vidauto="date" / "time" for clicking and typing.
 const FB_WHEN_JS = `(function () {
   const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
-  const isDate = (t) => /^[A-Z][a-z]{2,8}\\.? \\d{1,2}, \\d{4}$/.test(t) || /^\\d{1,2}\\/\\d{1,2}\\/\\d{2,4}$/.test(t) || /^\\d{4}-\\d{1,2}-\\d{1,2}$/.test(t);
+  // Oct 12, 2026 / Wed, Oct 12 / 10/12/2026 / 2026-10-12 / 2026/10/12 / 12 Oct 2026
+  const isDate = (t) => /^([A-Z][a-z]{2,8},? )?[A-Z][a-z]{2,8}\\.? \\d{1,2}(, \\d{4})?$/.test(t) || /^\\d{1,2}\\/\\d{1,2}\\/\\d{2,4}$/.test(t) ||
+    /^\\d{4}[-\\/.]\\d{1,2}[-\\/.]\\d{1,2}$/.test(t) || /^\\d{1,2} [A-Z][a-z]{2,8}\\.?,? \\d{4}$/.test(t);
   const isTime = (t) => /^\\d{1,2}:\\d{2}(\\s*[AP]M)?$/i.test(t);
   for (const e of document.querySelectorAll("[data-vidauto=date], [data-vidauto=time]")) e.removeAttribute("data-vidauto");
   const inputs = [...document.querySelectorAll("input")].filter(vis);
@@ -626,11 +628,16 @@ function fbWhen(id) {
 // Same day / same time, whatever way they're written
 function sameDay(shown, ms) {
   const d = new Date(ms);
-  const iso = String(shown || "").trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/); // TikTok: 2026-11-12
-  if (iso) return Number(iso[1]) === d.getFullYear() && Number(iso[2]) === d.getMonth() + 1 && Number(iso[3]) === d.getDate();
-  const m = String(shown || "").match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
-  const p = m ? new Date(Number(m[3].length === 2 ? "20" + m[3] : m[3]), Number(m[1]) - 1, Number(m[2])) : new Date(Date.parse(String(shown || "").replace(".", "")));
-  return !isNaN(p) && p.getFullYear() === d.getFullYear() && p.getMonth() === d.getMonth() && p.getDate() === d.getDate();
+  const t = String(shown || "").trim().replace(/^[A-Z][a-z]{2,8},\s+(?=[A-Z])/, ""); // drop a weekday in front
+  const MON = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+  const is = (y, mo, da) => (y === null || y === d.getFullYear()) && mo === d.getMonth() + 1 && da === d.getDate();
+  const year = (y) => (y ? Number(y.length === 2 ? "20" + y : y) : null);
+  let m;
+  if ((m = t.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})$/))) return is(Number(m[1]), Number(m[2]), Number(m[3])); // 2026-11-12 (TikTok)
+  if ((m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/))) return is(year(m[3]), Number(m[1]), Number(m[2])); // 11/12/2026
+  if ((m = t.match(/^([A-Za-z]{3})[a-z]*\.?\s+(\d{1,2})(?:,?\s+(\d{4}))?$/))) return is(year(m[3]), MON.indexOf(m[1].toLowerCase()) + 1, Number(m[2])); // Nov 12, 2026
+  if ((m = t.match(/^(\d{1,2})\s+([A-Za-z]{3})[a-z]*\.?,?\s+(\d{4})$/))) return is(year(m[3]), MON.indexOf(m[2].toLowerCase()) + 1, Number(m[1])); // 12 Nov 2026
+  return false;
 }
 function sameClock(shown, ms) {
   const m = String(shown || "").trim().match(/^(\d{1,2}):(\d{2})\s*([AP]M)?$/i);
@@ -715,7 +722,7 @@ function fbSetDate(id, ms) {
         }
         if (cal) break;
       }
-      if (!cal) return JSON.stringify({ r: "no calendar" });
+      if (!cal) return JSON.stringify({ r: "no calendar; numbers showing: " + leaves.map(say).filter((t) => /^\\d{1,2}$/.test(t)).slice(0, 40).join(" ") });
       // which month it shows: the words near the grid
       let around = cal;
       for (let i = 0; i < 4 && around.parentElement && !/\\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\\.?\\s*,?\\s*\\d{4}/i.test(around.innerText); i++) around = around.parentElement;
@@ -1222,9 +1229,16 @@ function tiktok(item, review) {
     if (w.date === null || w.time === null) {
       throw new Error(`Couldn't find the schedule's date and time (text boxes on the page: ${w.inputs || "none"})${dump(id)}`);
     }
+    log(`  TikTok's schedule boxes show ${w.date} ${w.time} (text boxes: ${w.inputs})`);
     if (!sameClock(w.time, item.when)) tkSetTime(id, item.when);
     w = fbWhen(id);
-    if (!sameDay(w.date, item.when)) fbSetDate(id, item.when);
+    if (!sameDay(w.date, item.when)) {
+      try {
+        fbSetDate(id, item.when);
+      } catch (e) {
+        throw new Error(`${e.message}\n    date box shows "${fbWhen(id).date}"; text boxes: ${fbWhen(id).inputs}`);
+      }
+    }
     delay(1);
     w = fbWhen(id);
     if (!sameClock(w.time, item.when) && w.time !== null) {
