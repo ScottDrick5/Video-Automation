@@ -102,8 +102,8 @@ Protecting your daily upload limit:
   stays open for you to check and click it yourself.
 - If something fails after the file was chosen (so the upload already counts), the tab is left open to finish by
   hand, that video is remembered so it's never uploaded twice, and the run stops.
-- It never uploads more than your daily limit (counting today's earlier uploads). Default 10 a day; to change it,
-  create `/Users/drick/Documents/AITA/vidauto-upload-limits.json` with e.g. `{ "youtube": 15 }`.
+- YouTube and TikTok have no daily limit. Facebook never gets more than 10 a day (counting today's earlier
+  uploads); to change that, create `/Users/drick/Documents/AITA/vidauto-upload-limits.json` with e.g. `{ "facebook": 15 }`.
 - If YouTube itself says the daily upload limit is reached, it stops without uploading that video, and doesn't try
   YouTube again until the next day; everything waiting goes up on the next run.
 - Uploaded some by hand? In the panel, type the date folders under **Already uploaded by hand** (e.g.
