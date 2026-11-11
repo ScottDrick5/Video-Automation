@@ -589,16 +589,23 @@ const FB_WHEN_JS = `(function () {
   for (const e of document.querySelectorAll("[data-vidauto=date], [data-vidauto=time]")) e.removeAttribute("data-vidauto");
   const inputs = [...document.querySelectorAll("input")].filter(vis);
   const named = (e, re) => re.test((e.getAttribute("aria-label") || "") + " " + (e.placeholder || ""));
-  let date = inputs.find((e) => isDate(e.value.trim())) || inputs.find((e) => named(e, /date/i));
-  let time = inputs.find((e) => isTime(e.value.trim())) || inputs.find((e) => named(e, /time/i));
-  if (!date) date = inputs.find((e) => (e.type === "text" || !e.type) && !/hours?|minutes?|meridiem/i.test(e.getAttribute("aria-label") || "") &&
-    !e.closest('[contenteditable="true"]') && e.getAttribute("data-vidauto") !== "tags" && /\\d{4}|[A-Z][a-z]{2}/.test(e.value));
+  // never the time zone box ("(GMT-5) Local Time" on TikTok): it isn't the date or the time
+  const zone = (e) => /gmt|utc|time\\s*zone|local time/i.test(e.value + " " + (e.getAttribute("aria-label") || "") + " " + (e.placeholder || ""));
+  let date = inputs.find((e) => isDate(e.value.trim())) || inputs.find((e) => named(e, /date/i) && !zone(e));
+  let time = inputs.find((e) => isTime(e.value.trim())) || inputs.find((e) => named(e, /time/i) && !zone(e));
   let dateKind = date ? "input" : "";
   let timeKind = time ? "input" : "";
+  // shown as plain text you click to change (TikTok: "Nov 11, 2026" and "17:50")
   if (!date || !time) {
     const leaves = [...document.querySelectorAll("span, div, button, [role]")].filter((e) => vis(e) && !e.children.length);
     if (!date) { date = leaves.find((e) => isDate((e.innerText || "").trim())); if (date) dateKind = "text"; }
     if (!time) { time = leaves.find((e) => isTime((e.innerText || "").trim())); if (time) timeKind = "text"; }
+  }
+  // last try: a text box with a year or a month name in it
+  if (!date) {
+    date = inputs.find((e) => (e.type === "text" || !e.type) && !/hours?|minutes?|meridiem/i.test(e.getAttribute("aria-label") || "") &&
+      !e.closest('[contenteditable="true"]') && e.getAttribute("data-vidauto") !== "tags" && !zone(e) && /\\d{4}|[A-Z][a-z]{2}/.test(e.value));
+    if (date) dateKind = "input";
   }
   if (date) date.setAttribute("data-vidauto", "date");
   if (time) time.setAttribute("data-vidauto", "time");
@@ -1291,7 +1298,7 @@ function run(argv) {
   const here = argv[argv.length - 1] || ".";
   U = eval(`(function () { var module = { exports: {} }; ${readText(here + "/upload-rules.js")}
     return module.exports; })()`);
-  log(`(Upload version 11-11b, rules ${U.RULES_VERSION || "old"})`);
+  log(`(Upload version 11-11c, rules ${U.RULES_VERSION || "old"})`);
   if (!["youtube", "facebook", "tiktok"].includes(platform)) return `Uploading to ${platform} isn't built yet.`;
 
   const record = JSON.parse(readText(UPLOADS_FILE) || '{"uploads":[]}');
