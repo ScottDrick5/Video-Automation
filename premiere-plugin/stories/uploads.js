@@ -1268,17 +1268,43 @@ function tiktok(item, review) {
     }
     if (!btn.enabled) throw new Error(`TikTok's "Schedule" button is greyed out${dump(id)}`);
     jsClick(id, ['[data-vidauto="tt-post"]'], 'the "Schedule" button');
-    // done when TikTok moves on to your posts list or says it's scheduled
-    const until = Date.now() + 120000;
+    // done when TikTok moves on to your posts list or says it's scheduled. If TikTok is still checking the video it
+    // asks "Continue to post?" with "Post now": never press that; press Cancel, wait for the check, press Schedule again.
+    const until = Date.now() + 20 * 60000;
     let ok = false;
+    let waits = 0;
     while (Date.now() < until) {
+      checkStop();
       delay(2);
-      const page = js(id, "location.href + ' ' + document.body.innerText.slice(0, 4000)");
+      const page = js(id, "location.href + ' ' + document.body.innerText.slice(0, 6000)");
       if (/\/tiktokstudio\/content|\/manage/i.test(page.split(" ")[0]) || /(has been|been|successfully) scheduled|manage your posts/i.test(page)) {
         ok = true;
         break;
       }
       if (TT_BLOCKED.test(page)) break;
+      if (/continue to post\?|still checking your video/i.test(page)) {
+        const cancelled = js(id, `(function () {
+          const vis = (e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; };
+          const boxes = [...document.querySelectorAll('[role="dialog"], [class*="modal" i], [class*="dialog" i]')]
+            .filter((d) => vis(d) && /continue to post|still checking/i.test(d.innerText || ""));
+          const inside = boxes.length ? boxes[boxes.length - 1] : document;
+          const b = [...inside.querySelectorAll("button, [role=button]")].find((x) => vis(x) && (x.innerText || "").trim().toLowerCase() === "cancel");
+          if (!b) return "";
+          b.click();
+          return "ok";
+        })()`);
+        if (cancelled !== "ok") throw new Error(`TikTok asks "Continue to post?" and its Cancel button couldn't be found. Nothing was pressed; click Cancel, wait for the check to finish, then click Schedule yourself${dump(id)}`);
+        waits++;
+        if (waits === 1) log("  TikTok is still checking the video; waiting for the check to finish before scheduling...");
+        delay(20);
+        btn = tkPostButton(id);
+        if (!/schedule/i.test(btn.text || "")) throw new Error(`After waiting for TikTok's check the bottom button says "${btn.text || "?"}", so it wasn't pressed${dump(id)}`);
+        const w2 = fbWhen(id);
+        if (!sameDay(w2.date, item.when) || !sameClock(w2.time, item.when)) {
+          throw new Error(`While waiting for TikTok's check the schedule changed to ${w2.date} ${w2.time}; nothing was posted. Fix it in the open tab and click Schedule yourself`);
+        }
+        jsClick(id, ['[data-vidauto="tt-post"]'], 'the "Schedule" button');
+      }
     }
     if (!ok) throw new AfterFilePicked("Pressed Schedule, but TikTok didn't confirm it; check your posts in TikTok Studio (it may be scheduled)");
     log(`  scheduled on TikTok for ${day} ${time}`);
@@ -1298,7 +1324,7 @@ function run(argv) {
   const here = argv[argv.length - 1] || ".";
   U = eval(`(function () { var module = { exports: {} }; ${readText(here + "/upload-rules.js")}
     return module.exports; })()`);
-  log(`(Upload version 11-11c, rules ${U.RULES_VERSION || "old"})`);
+  log(`(Upload version 11-11d, rules ${U.RULES_VERSION || "old"})`);
   if (!["youtube", "facebook", "tiktok"].includes(platform)) return `Uploading to ${platform} isn't built yet.`;
 
   const record = JSON.parse(readText(UPLOADS_FILE) || '{"uploads":[]}');
