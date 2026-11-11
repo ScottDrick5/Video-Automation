@@ -19,8 +19,8 @@ const YT_CHANNEL = "UCI3S3qXsupSQFBb4Qe2szpg";
 const FB_ASSET = "214107491779719"; // your Facebook page in Meta Business Suite
 const FB_TAGS = ["aita", "storytime", "redditstoryteller", "RelationshipDrama", "reddit"]; // the reel's Tags box
 const FB_PLAYLIST = "Full Videos";
-const LIMITS_FILE = AITA_DIR + "/vidauto-upload-limits.json"; // e.g. { "facebook": 15 }: most uploads per day
-const DEFAULT_DAILY_LIMIT = { facebook: 10 }; // YouTube and TikTok have no daily limit
+const LIMITS_FILE = AITA_DIR + "/vidauto-upload-limits.json"; // optional, e.g. { "facebook": 15 }: most uploads per day
+const DEFAULT_DAILY_LIMIT = {}; // no daily limit by default; vidauto-upload-limits.json can set one per site
 
 class AfterFilePicked extends Error {} // failed after the file was chosen: that upload already counts
 class UploadLimit extends Error {} // YouTube says the daily upload limit is reached
@@ -1324,7 +1324,7 @@ function run(argv) {
   const here = argv[argv.length - 1] || ".";
   U = eval(`(function () { var module = { exports: {} }; ${readText(here + "/upload-rules.js")}
     return module.exports; })()`);
-  log(`(Upload version 11-11g, rules ${U.RULES_VERSION || "old"})`);
+  log(`(Upload version 11-11h, rules ${U.RULES_VERSION || "old"})`);
   if (!["youtube", "facebook", "tiktok"].includes(platform)) return `Uploading to ${platform} isn't built yet.`;
 
   const record = JSON.parse(readText(UPLOADS_FILE) || '{"uploads":[]}');
@@ -1351,8 +1351,9 @@ function run(argv) {
   // real uploads today only: videos you marked as already uploaded (posted by hand) don't count
   const doneToday = record.uploads.filter((x) => x.key.startsWith(platform + "|") && new Date(x.at).toDateString() === today &&
     !/marked as already uploaded/i.test(x.note || "")).length;
-  // YouTube and TikTok: no daily limit (if YouTube itself says a limit is reached, the run still stops for the day)
-  const limited = platform === "facebook" && limits[platform] > 0;
+  // no daily limit unless vidauto-upload-limits.json sets one (if YouTube itself says its limit is reached, the run
+  // still stops for the day)
+  const limited = limits[platform] > 0;
   const room = limited ? Math.max(0, limits[platform] - doneToday) : Infinity;
   if (items.length > room) {
     log(`  daily limit: ${limits[platform]} a day, ${doneToday} already today, so ${room} now; the other ${items.length - room} wait for the next run`);
