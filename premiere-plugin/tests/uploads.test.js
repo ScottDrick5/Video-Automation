@@ -51,3 +51,15 @@ test("Facebook gets only the full video at 1:30 PM; done uploads and past times 
   assert.deepStrictEqual(late.items.map((i) => u.studioTime(i.when)), ["1:30 PM", "3:30 PM"]);
   assert.match(late.skipped[0], /Full Video.*too soon or already past/);
 });
+
+test("TikTok gets the full video and the parts at YouTube's times, but only up to 10 days ahead", () => {
+  const now = new Date(2026, 8, 29, 9, 0);
+  const soon = u.uploadPlan("tiktok", [{ name: "10-02-26", files, credit: "Orbital" }], new Set(), now);
+  assert.deepStrictEqual(soon.items.map((i) => u.studioTime(i.when)), ["11:30 AM", "1:30 PM", "3:30 PM"]);
+  assert.ok(soon.items[0].description.startsWith(soon.items[0].title + "\n\nGameplay Video Credit: Orbital"));
+  const far = u.uploadPlan("tiktok", [{ name: "10-12-26", files, credit: "Orbital" }], new Set(), now);
+  assert.strictEqual(far.items.length, 0);
+  assert.ok(far.skipped.some((s) => /10-12-26: more than 10 days ahead/.test(s)));
+  // YouTube has no such limit
+  assert.ok(u.uploadPlan("youtube", [{ name: "10-12-26", files, credit: "Orbital" }], new Set(), now).items.length > 0);
+});

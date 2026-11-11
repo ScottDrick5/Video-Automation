@@ -46,7 +46,7 @@ const ARROW_TRACK = 2; // V3
 const ARROW_SECONDS = 5;
 const CLIP_ARROW_AT = 5; // seconds into each clip
 const TICKS_PER_SECOND = 254016000000;
-const PLUGIN_VERSION = "0.9.2";
+const PLUGIN_VERSION = "0.9.3";
 
 const state = { clip: null, transcript: null, cut: null, sequence: null };
 
@@ -1180,7 +1180,7 @@ async function getStories(count = 0) {
 // Upload: the helper schedules the finished videos on each platform ticked under "Upload to" (one after the
 // other). Its progress is copied into this log.
 async function uploadVideos(testOne) {
-  const platforms = [["youtube", "upYoutube"], ["facebook", "upFacebook"]]
+  const platforms = [["youtube", "upYoutube"], ["facebook", "upFacebook"], ["tiktok", "upTiktok"]]
     .filter(([, box]) => document.getElementById(box).checked).map(([p]) => p);
   if (!platforms.length) {
     log("--- Upload: no platform ticked under \"Upload to\"");

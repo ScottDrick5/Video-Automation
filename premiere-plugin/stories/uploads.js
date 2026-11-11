@@ -1,4 +1,4 @@
-// VidAuto Upload: schedules the finished videos on YouTube (TikTok and Facebook come next).
+// VidAuto Upload: schedules the finished videos on YouTube, Facebook and TikTok.
 // Runs on the Mac (JavaScript for Automation). It drives YouTube Studio in your signed-in Chrome; to pick the
 // video file it clicks the site's "Select files" button and types the file's location into the Mac's file window,
 // so Chrome must stay in front and the mouse and keyboard must be left alone while it runs.
@@ -582,7 +582,7 @@ function fbButton(id, words, last) {
 // click to edit). Marks them data-vidauto="date" / "time" for clicking and typing.
 const FB_WHEN_JS = `(function () {
   const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
-  const isDate = (t) => /^[A-Z][a-z]{2,8}\\.? \\d{1,2}, \\d{4}$/.test(t) || /^\\d{1,2}\\/\\d{1,2}\\/\\d{2,4}$/.test(t);
+  const isDate = (t) => /^[A-Z][a-z]{2,8}\\.? \\d{1,2}, \\d{4}$/.test(t) || /^\\d{1,2}\\/\\d{1,2}\\/\\d{2,4}$/.test(t) || /^\\d{4}-\\d{1,2}-\\d{1,2}$/.test(t);
   const isTime = (t) => /^\\d{1,2}:\\d{2}(\\s*[AP]M)?$/i.test(t);
   for (const e of document.querySelectorAll("[data-vidauto=date], [data-vidauto=time]")) e.removeAttribute("data-vidauto");
   const inputs = [...document.querySelectorAll("input")].filter(vis);
@@ -626,6 +626,8 @@ function fbWhen(id) {
 // Same day / same time, whatever way they're written
 function sameDay(shown, ms) {
   const d = new Date(ms);
+  const iso = String(shown || "").trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/); // TikTok: 2026-11-12
+  if (iso) return Number(iso[1]) === d.getFullYear() && Number(iso[2]) === d.getMonth() + 1 && Number(iso[3]) === d.getDate();
   const m = String(shown || "").match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
   const p = m ? new Date(Number(m[3].length === 2 ? "20" + m[3] : m[3]), Number(m[1]) - 1, Number(m[2])) : new Date(Date.parse(String(shown || "").replace(".", "")));
   return !isNaN(p) && p.getFullYear() === d.getFullYear() && p.getMonth() === d.getMonth() && p.getDate() === d.getDate();
@@ -716,13 +718,18 @@ function fbSetDate(id, ms) {
       if (!cal) return JSON.stringify({ r: "no calendar" });
       // which month it shows: the words near the grid
       let around = cal;
-      for (let i = 0; i < 4 && around.parentElement && !/(january|february|march|april|may|june|july|august|september|october|november|december)/i.test(around.innerText); i++) around = around.parentElement;
-      const shown = (around.innerText.match(/(January|February|March|April|May|June|July|August|September|October|November|December)\\s*,?\\s*(\\d{4})?/) || [""])[0];
-      if (shown && !shown.startsWith(month)) {
-        // a different month: click the "next month" arrow
-        const next = [...around.querySelectorAll("[aria-label], button, [role=button]")].find((e) => vis(e) && /next/i.test(e.getAttribute("aria-label") || ""));
+      for (let i = 0; i < 4 && around.parentElement && !/\\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\\.?\\s*,?\\s*\\d{4}/i.test(around.innerText); i++) around = around.parentElement;
+      const shown = (around.innerText.match(/\\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\.?\\s*,?\\s*(\\d{4})?/i) || [""])[0];
+      if (shown && shown.slice(0, 3).toLowerCase() !== month.slice(0, 3).toLowerCase()) {
+        // a different month: click the "next month" arrow (by its label, or else the rightmost unlabelled arrow
+        // above the day numbers)
+        const calTop = cal.getBoundingClientRect().top;
+        const next = [...around.querySelectorAll("[aria-label], button, [role=button]")].find((e) => vis(e) && /next/i.test(e.getAttribute("aria-label") || "")) ||
+          [...around.querySelectorAll("button, [role=button], svg, span, div, i")]
+            .filter((e) => vis(e) && !(e.innerText || "").trim() && e.getBoundingClientRect().width < 48 && e.getBoundingClientRect().top < calTop + 5 && !cal.contains(e))
+            .sort((a, b) => b.getBoundingClientRect().right - a.getBoundingClientRect().right)[0];
         if (!next) return JSON.stringify({ r: "other month", shown });
-        next.click();
+        (next.closest("button, [role=button]") || next).dispatchEvent(new MouseEvent("click", { bubbles: true }));
         return JSON.stringify({ r: "moved", shown });
       }
       // the day: a cell with that number that isn't greyed out (days from the next or last month)
@@ -1037,6 +1044,230 @@ function facebook(item, review) {
   }
 }
 
+// ------------------------------------------------------------------ TikTok (TikTok Studio)
+
+const TT_UPLOAD = "https://www.tiktok.com/tiktokstudio/upload?from=webapp";
+const TT_BLOCKED = /verify to continue|drag the slider|select all images|captcha|log in to tiktok|sign up for tiktok/i;
+
+// The schedule's time in TikTok's time picker: it opens a list per column (hours, minutes in steps of 5, and AM/PM
+// when the time shows that way). Click the hour, then the minutes (then AM/PM) with the real mouse.
+function tkSetTime(id, ms) {
+  const d = new Date(ms);
+  realClick(id, ['[data-vidauto="time"]'], "the time box");
+  delay(1.2);
+  const r = js(id, `(function (h24, min) {
+    const vis = (e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; };
+    const say = (e) => (e.innerText || e.textContent || "").trim();
+    for (const e of document.querySelectorAll("[data-vidauto^=tt-]")) e.removeAttribute("data-vidauto");
+    const timeBox = document.querySelector('[data-vidauto="time"]');
+    const leaves = [...document.querySelectorAll("span, div, li, button, [role=option]")]
+      .filter((e) => vis(e) && ![...e.children].some(vis) && /^(\\d{1,2}|AM|PM)$/i.test(say(e)) && !(timeBox && timeBox.contains(e)));
+    // group the choices into columns by where they sit across the screen
+    const cols = [];
+    for (const e of leaves) {
+      const x = Math.round(e.getBoundingClientRect().left);
+      let c = cols.find((k) => Math.abs(k.x - x) < 12);
+      if (!c) cols.push((c = { x, items: [] }));
+      c.items.push(e);
+    }
+    cols.sort((a, b) => a.x - b.x);
+    const nums = (c) => c.items.map(say);
+    const ampm = cols.find((c) => nums(c).some((t) => /^(AM|PM)$/i.test(t)));
+    const numeric = cols.filter((c) => c !== ampm && c.items.length >= 10); // the hour and minute lists (12 or more each)
+    if (numeric.length < 2) return JSON.stringify({ r: "no time list", cols: cols.map((c) => nums(c).slice(0, 6).join(",")) });
+    const twelve = !!ampm || !numeric.some((c) => nums(c).some((t) => Number(t) === 23));
+    const hours = numeric[0], minutes = numeric[1];
+    const hourWant = twelve ? (h24 % 12 || 12) : h24;
+    const pick = (col, n, tag) => {
+      const e = col.items.find((x) => Number(say(x)) === n);
+      if (!e) return false;
+      (e.closest("li, [role=option], button") || e).setAttribute("data-vidauto", tag);
+      return true;
+    };
+    if (!pick(hours, hourWant, "tt-hour")) return JSON.stringify({ r: "no hour " + hourWant });
+    if (!pick(minutes, min, "tt-min")) return JSON.stringify({ r: "no minute " + min + " (minutes go in steps)" });
+    if (ampm) {
+      const e = ampm.items.find((x) => say(x).toUpperCase() === (h24 < 12 ? "AM" : "PM"));
+      if (e) (e.closest("li, [role=option], button") || e).setAttribute("data-vidauto", "tt-ampm");
+    }
+    return JSON.stringify({ r: "found", twelve });
+  })(${d.getHours()}, ${d.getMinutes()})`);
+  const res = JSON.parse(r || '{"r":"?"}');
+  if (res.r !== "found") throw new Error(`Couldn't pick ${U.studioTime(ms)} in TikTok's time list (${res.r}${res.cols ? "; lists: " + res.cols.join(" / ") : ""})${dump(id)}`);
+  for (const tag of ["tt-hour", "tt-min", "tt-ampm"]) {
+    if (!has(id, [`[data-vidauto="${tag}"]`])) continue;
+    js(id, `(function () { const e = document.querySelector('[data-vidauto="${tag}"]'); if (e) e.scrollIntoView({ block: "nearest" }); })()`);
+    delay(0.4);
+    realClick(id, [`[data-vidauto="${tag}"]`], "a time in TikTok's list");
+    delay(0.8);
+  }
+  keys.keyCode(53); // Escape: close the list
+  delay(0.8);
+}
+
+// The "Post" / "Schedule" button at the bottom: { text, enabled }
+function tkPostButton(id) {
+  return JSON.parse(js(id, `(function () {
+    const vis = (e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; };
+    for (const e of document.querySelectorAll("[data-vidauto=tt-post]")) e.removeAttribute("data-vidauto");
+    const all = [...document.querySelectorAll('[data-e2e="post_video_button"], button')].filter((b) => vis(b) &&
+      (b.getAttribute("data-e2e") === "post_video_button" || /^(post|schedule)$/i.test((b.innerText || "").trim())));
+    all.sort((a, b) => b.getBoundingClientRect().top - a.getBoundingClientRect().top);
+    const b = all[0];
+    if (!b) return "{}";
+    b.setAttribute("data-vidauto", "tt-post");
+    const enabled = !b.disabled && b.getAttribute("aria-disabled") !== "true" && !/disabled/i.test(b.getAttribute("data-disabled") || "");
+    return JSON.stringify({ text: (b.innerText || "").trim(), enabled });
+  })()`) || "{}");
+}
+
+function tkCheckBlocked(id) {
+  const page = js(id, "document.body.innerText.slice(0, 3000)");
+  if (TT_BLOCKED.test(page)) {
+    throw new Error("TikTok is asking you to sign in or to prove you're not a robot. Do that in the open TikTok tab, then run Upload again");
+  }
+}
+
+// One video (full video or part) on TikTok. review = true fills in everything and stops before the final
+// "Schedule" click (the tab stays open for you to check and click it).
+function tiktok(item, review) {
+  const path = `${CLIPS_DIR}/${item.folder}/${item.file}`;
+  const id = openTab(TT_UPLOAD);
+  let keepOpen = false;
+  try {
+    delay(2);
+    tkCheckBlocked(id);
+    const pickSel = ['[data-e2e="select_video_button"]', "text:Select video", "text:Select videos", "text:Select file", "text:Select files"];
+    waitFor(id, pickSel, 60, 'TikTok Studio\'s "Select video" button');
+    realClick(id, pickSel, 'the "Select video" button');
+    pickFile(path);
+    keepOpen = true; // from here on, leave the tab open if anything goes wrong so you can see it
+
+    // the details page: wait for the caption box, then for the upload to finish (the Post button turns on)
+    waitFor(id, ['.public-DraftEditor-content', '[contenteditable="true"]'], 120, "TikTok's caption box (after choosing the video)");
+    const end = Date.now() + 45 * 60000;
+    let btn = {};
+    let note = Date.now() + 60000;
+    let enabledSince = 0;
+    while (Date.now() < end) {
+      checkStop();
+      btn = tkPostButton(id);
+      const busy = js(id, `/\\buploading\\b|\\b\\d{1,2}(\\.\\d+)?%/i.test(document.body.innerText) ? "yes" : ""`);
+      if (btn.enabled && !enabledSince) enabledSince = Date.now();
+      if (!btn.enabled) enabledSince = 0;
+      // the Post button turns on when the upload is done; give a progress bar that's still showing 3 more minutes
+      if (btn.enabled && (!busy || Date.now() - enabledSince > 180000)) break;
+      if (Date.now() > note) {
+        log("  still uploading to TikTok...");
+        note = Date.now() + 60000;
+      }
+      delay(3);
+    }
+    if (!btn.enabled) throw new Error(`The video didn't finish uploading to TikTok within 45 minutes${dump(id)}`);
+    log("  uploaded");
+    tkCheckBlocked(id);
+
+    // caption: name, credit, hashtags (pasted, so the blank lines stay; replaces the file name TikTok puts in)
+    const box = js(id, `(function () {
+      const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+      const e = [...document.querySelectorAll('.public-DraftEditor-content, [contenteditable="true"]')].find(vis);
+      if (!e) return "";
+      e.scrollIntoView({ block: "center" });
+      e.focus();
+      return "ok";
+    })()`);
+    if (box !== "ok") throw new Error(`Couldn't find TikTok's caption box${dump(id)}`);
+    front(id);
+    paste(item.description);
+    delay(1);
+    keys.keyCode(53); // Escape: close a hashtag suggestion list if one opened
+    delay(0.5);
+    const got = js(id, `(function () {
+      const e = [...document.querySelectorAll('.public-DraftEditor-content, [contenteditable="true"]')].find((x) => x.getBoundingClientRect().width > 0);
+      return e ? e.innerText.trim() : "";
+    })()`);
+    if (!got.includes(item.title) || !got.includes(item.credit)) {
+      throw new Error(`The caption didn't go in right (it shows: "${got.replace(/\s+/g, " ").slice(0, 150)}")`);
+    }
+    log(`  caption: ${item.title} / Gameplay Video Credit: ${item.credit} / hashtags`);
+
+    // "When to post": choose Schedule (not "Now"), then set the time and the date
+    let w = fbWhen(id);
+    if (w.date === null || w.time === null) {
+      const r = js(id, `(function () {
+        const vis = (e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; };
+        const say = (e) => (e.innerText || e.textContent || "").trim();
+        const opts = [...document.querySelectorAll('label, span, div, [role="radio"]')]
+          .filter((e) => vis(e) && say(e) === "Schedule" && ![...e.children].some((c) => say(c) === "Schedule") && !e.closest("button"));
+        if (!opts.length) return "no option";
+        const e = opts[0];
+        const radio = (e.closest("label") && e.closest("label").querySelector('input[type="radio"]')) ||
+          (e.parentElement && e.parentElement.querySelector('input[type="radio"]'));
+        (radio || e.closest('[role="radio"], label') || e).click();
+        return "clicked";
+      })()`);
+      if (r !== "clicked") throw new Error(`Couldn't choose "Schedule" under "When to post" (${r})${dump(id)}`);
+      delay(2);
+      // some accounts get a one-time note about scheduled posts: close it with its OK / Got it / Allow button
+      for (const words of ["Got it", "OK", "Allow"]) {
+        if (has(id, [`text:${words}`]) && !fbWhen(id).date) {
+          jsClick(id, [`text:${words}`], `the "${words}" button`);
+          delay(1.5);
+        }
+      }
+      w = fbWhen(id);
+    }
+    const day = U.studioDate(item.when);
+    const time = U.studioTime(item.when);
+    if (w.date === null || w.time === null) {
+      throw new Error(`Couldn't find the schedule's date and time (text boxes on the page: ${w.inputs || "none"})${dump(id)}`);
+    }
+    if (!sameClock(w.time, item.when)) tkSetTime(id, item.when);
+    w = fbWhen(id);
+    if (!sameDay(w.date, item.when)) fbSetDate(id, item.when);
+    delay(1);
+    w = fbWhen(id);
+    if (!sameClock(w.time, item.when) && w.time !== null) {
+      // the date can move the time to the earliest allowed; set it again
+      tkSetTime(id, item.when);
+      w = fbWhen(id);
+    }
+    log(`  schedule set to ${w.date} ${w.time} (wanted ${day} ${time})`);
+    if (!sameDay(w.date, item.when) || !sameClock(w.time, item.when)) {
+      throw new Error(`The schedule shows ${w.date} ${w.time} instead of ${day} ${time}. Nothing was posted; ` +
+        "fix the date and time in the open tab and click Schedule yourself, or close the tab");
+    }
+
+    btn = tkPostButton(id);
+    if (!/schedule/i.test(btn.text || "")) throw new Error(`The bottom button says "${btn.text || "?"}" instead of "Schedule", so it wasn't pressed${dump(id)}`);
+    if (review) {
+      log("  TEST: everything is filled in. Check the caption, date and time in the open TikTok tab,");
+      log('  then click "Schedule" yourself (or fix anything first).');
+      return true;
+    }
+    if (!btn.enabled) throw new Error(`TikTok's "Schedule" button is greyed out${dump(id)}`);
+    jsClick(id, ['[data-vidauto="tt-post"]'], 'the "Schedule" button');
+    // done when TikTok moves on to your posts list or says it's scheduled
+    const until = Date.now() + 120000;
+    let ok = false;
+    while (Date.now() < until) {
+      delay(2);
+      const page = js(id, "location.href + ' ' + document.body.innerText.slice(0, 4000)");
+      if (/\/tiktokstudio\/content|\/manage/i.test(page.split(" ")[0]) || /(has been|been|successfully) scheduled|manage your posts/i.test(page)) {
+        ok = true;
+        break;
+      }
+      if (TT_BLOCKED.test(page)) break;
+    }
+    if (!ok) throw new AfterFilePicked("Pressed Schedule, but TikTok didn't confirm it; check your posts in TikTok Studio (it may be scheduled)");
+    log(`  scheduled on TikTok for ${day} ${time}`);
+    keepOpen = false;
+    return false;
+  } finally {
+    if (!keepOpen) closeTab(id);
+  }
+}
+
 // ------------------------------------------------------------------ main
 
 function run(argv) {
@@ -1046,7 +1277,7 @@ function run(argv) {
   const here = argv[argv.length - 1] || ".";
   U = eval(`(function () { var module = { exports: {} }; ${readText(here + "/upload-rules.js")}
     return module.exports; })()`);
-  if (platform !== "youtube" && platform !== "facebook") return `Uploading to ${platform} isn't built yet.`;
+  if (!["youtube", "facebook", "tiktok"].includes(platform)) return `Uploading to ${platform} isn't built yet.`;
 
   const record = JSON.parse(readText(UPLOADS_FILE) || '{"uploads":[]}');
   const uploaded = new Set(record.uploads.map((x) => x.key));
@@ -1113,9 +1344,10 @@ function run(argv) {
     // test: one video, filled in, you click Schedule
     const item = items[0];
     log(`${item.file} -> ${U.studioDate(item.when)} ${U.studioTime(item.when)}`);
-    const site = platform === "facebook" ? "Business Suite" : "YouTube";
+    const site = { facebook: "Business Suite", tiktok: "TikTok Studio", youtube: "YouTube" }[platform];
     try {
       if (platform === "facebook") facebook(item, true);
+      else if (platform === "tiktok") tiktok(item, true);
       else youtube(item, true);
       remember(item, "test: you click Schedule");
       log(`=== TEST done: waiting for you to click Schedule in the open ${site} tab.`);
@@ -1128,8 +1360,10 @@ function run(argv) {
     }
   }
 
-  // Facebook: one full video at a time
-  if (platform === "facebook") {
+  // Facebook and TikTok: one video at a time
+  if (platform === "facebook" || platform === "tiktok") {
+    const name = platform === "facebook" ? "Facebook" : "TikTok";
+    const where = platform === "facebook" ? "The Business Suite tab is left open; check Planner" : "The TikTok tab is left open; check your posts in TikTok Studio";
     for (const item of items) {
       if (exists(STOP_FILE)) {
         log(`STOPPED by you after ${done} of ${items.length}.`);
@@ -1137,7 +1371,8 @@ function run(argv) {
       }
       log(`--- ${item.folder}: ${item.file} -> ${U.studioDate(item.when)} ${fbTime(item.when)}`);
       try {
-        facebook(item, false);
+        if (platform === "facebook") facebook(item, false);
+        else tiktok(item, false);
         remember(item);
         done++;
       } catch (e) {
@@ -1145,14 +1380,14 @@ function run(argv) {
           log(`STOPPED by you after ${done} of ${items.length}.`);
           return `Stopped by you after ${done} of ${items.length}.`;
         }
-        if (e instanceof AfterFilePicked) remember(item, "pressed Schedule but not confirmed: check Planner");
+        if (e instanceof AfterFilePicked) remember(item, `pressed Schedule but not confirmed: check ${name}`);
         log(`  FAILED: ${e.message}`);
-        log("STOPPED so nothing gets posted twice or at the wrong time. The Business Suite tab is left open; check Planner, then run again.");
+        log(`STOPPED so nothing gets posted twice or at the wrong time. ${where}, then run again.`);
         return `Stopped after ${done} of ${items.length}: ${e.message.split("\n")[0]}`;
       }
     }
-    log(`=== Done: ${done} of ${items.length} scheduled on facebook`);
-    return `Done: ${done} of ${items.length} scheduled on Facebook.`;
+    log(`=== Done: ${done} of ${items.length} scheduled on ${platform}`);
+    return `Done: ${done} of ${items.length} scheduled on ${name}.`;
   }
 
   // one date folder at a time: upload its videos together, then fill in and schedule each

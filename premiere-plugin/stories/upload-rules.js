@@ -8,6 +8,9 @@ const TIMES = {
   facebook: { full: [13, 30], parts: [] }, // Facebook gets the full video only
 };
 
+// Furthest ahead each site lets you schedule (TikTok: 10 days); later videos wait for a later run
+const MAX_DAYS_AHEAD = { tiktok: 10 };
+
 const HASHTAGS = "#storytime #redditstoryteller #RelationshipDrama #reddit";
 
 // "9-28-26" / "10-02-26" -> Date at midnight (local time), or null
@@ -73,6 +76,12 @@ function uploadPlan(platform, folders, uploaded, now) {
         skipped.push(`${file} (${f.name}) is due too soon or already past; post it by hand`);
         continue;
       }
+      const maxDays = MAX_DAYS_AHEAD[platform];
+      if (maxDays && when.getTime() > now.getTime() + maxDays * 86400000 - 3600000) {
+        const msg = `${f.name}: more than ${maxDays} days ahead, the furthest ${platform === "tiktok" ? "TikTok" : platform} schedules; it goes up on a later run`;
+        if (!skipped.includes(msg)) skipped.push(msg);
+        continue;
+      }
       if (!f.credit) {
         const msg = `${f.name}: no gameplay credit found`;
         if (!skipped.includes(msg)) skipped.push(msg);
@@ -98,5 +107,5 @@ function studioTime(ms) {
 }
 
 if (typeof module !== "undefined") {
-  module.exports = { TIMES, HASHTAGS, folderDay, videoInfo, description, withCredit, creditFromAuthor, uploadPlan, studioDate, studioTime };
+  module.exports = { TIMES, MAX_DAYS_AHEAD, HASHTAGS, folderDay, videoInfo, description, withCredit, creditFromAuthor, uploadPlan, studioDate, studioTime };
 }

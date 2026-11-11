@@ -57,10 +57,18 @@ The panel shows the current source video and how much is left. To start the next
 (for example after cutting a video by hand), type the timecode, e.g. `00;07;45;01`, and click
 **Set start of next video**. Progress is kept in `/Users/drick/Documents/AITA/vidauto-usage.json`.
 
-## Upload (YouTube and Facebook; TikTok next)
+## Upload (YouTube, Facebook and TikTok)
 
-Tick where to upload under **Upload to** (YouTube, Facebook; both runs one after the other), then click **Upload**
-in the panel (or double-click `stories/Upload Videos.command` and type f or y), or tick **Upload at the end of Run**.
+Tick where to upload under **Upload to** (YouTube, Facebook, TikTok; ticked ones run one after the other), then click
+**Upload** in the panel (or double-click `stories/Upload Videos.command` and type f, t or y), or tick **Upload at the
+end of Run**.
+
+**TikTok:** the full video and the parts, at the same times as YouTube (11:30 AM, then 1:30-9:30 PM Eastern), one at
+a time. Be signed in to TikTok in Chrome. It opens TikTok Studio's upload page, picks the file, waits for the upload,
+pastes the text below as the caption, chooses Schedule under "When to post", sets the time and date, and clicks
+Schedule. The AI-generated content switch is left off. TikTok only schedules up to 10 days ahead, so folders further
+out wait for a later run (the log says so). If TikTok asks you to sign in or prove you're not a robot, the upload
+stops and says so. With **Test: just one** it fills everything in and stops before the last click.
 
 **Facebook:** only the full video, at 1:30 PM Eastern on the folder's date. It opens Meta Business Suite's Create
 post, adds the video (Business Suite turns it into a reel), pastes the text below into the description, adds the tags

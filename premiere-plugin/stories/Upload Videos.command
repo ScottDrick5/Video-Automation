@@ -1,15 +1,16 @@
 #!/bin/bash
-# Schedules the finished videos on YouTube or Facebook (TikTok comes next).
-# Before the first run: be signed in to YouTube / Facebook in Chrome; Chrome > View > Developer > Allow JavaScript from
+# Schedules the finished videos on YouTube, Facebook or TikTok.
+# Before the first run: be signed in to YouTube / Facebook / TikTok in Chrome; Chrome > View > Developer > Allow JavaScript from
 # Apple Events is on (as for Get Stories). macOS will ask to let Terminal control Chrome and System Events, and
 # Terminal needs Accessibility (System Settings > Privacy & Security > Accessibility) to type into the file window.
 # Don't touch the mouse or keyboard while it runs.
 cd "$(dirname "$0")"
 echo "VidAuto - Upload Videos"
 echo
-read -r -p "Where to? (f = Facebook, y = YouTube) " P
+read -r -p "Where to? (f = Facebook, t = TikTok, y = YouTube) " P
 PLATFORM="youtube"
 [[ "$P" =~ ^[Ff] ]] && PLATFORM="facebook"
+[[ "$P" =~ ^[Tt] ]] && PLATFORM="tiktok"
 read -r -p "Test with just one video? (y = one, filled in but you click Schedule; Enter = all) " T
 ARGS="$PLATFORM 0"
 [[ "$T" =~ ^[Yy] ]] && ARGS="$PLATFORM 1 review"
