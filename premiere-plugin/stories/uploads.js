@@ -1293,10 +1293,10 @@ function tiktok(item, review) {
         }
         const pressed = js(id, `(function () {
           const vis = (e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; };
-          const boxes = [...document.querySelectorAll('[role="dialog"], [class*="modal" i], [class*="dialog" i]')]
-            .filter((d) => vis(d) && /continue to post|still checking/i.test(d.innerText || ""));
-          const inside = boxes.length ? boxes[boxes.length - 1] : document;
-          const b = [...inside.querySelectorAll("button, [role=button]")].find((x) => vis(x) && (x.innerText || "").trim().toLowerCase() === "post now");
+          // the window's "Post now" button (the only one on the page; the form's own button says "Schedule")
+          const say = (x) => (x.innerText || x.textContent || "").replace(/\\s+/g, " ").trim().toLowerCase();
+          const all = [...document.querySelectorAll("button, [role=button]")].filter((x) => vis(x) && say(x) === "post now");
+          const b = all[all.length - 1];
           if (!b) return "";
           b.click();
           return "ok";
@@ -1324,7 +1324,7 @@ function run(argv) {
   const here = argv[argv.length - 1] || ".";
   U = eval(`(function () { var module = { exports: {} }; ${readText(here + "/upload-rules.js")}
     return module.exports; })()`);
-  log(`(Upload version 11-11e, rules ${U.RULES_VERSION || "old"})`);
+  log(`(Upload version 11-11f, rules ${U.RULES_VERSION || "old"})`);
   if (!["youtube", "facebook", "tiktok"].includes(platform)) return `Uploading to ${platform} isn't built yet.`;
 
   const record = JSON.parse(readText(UPLOADS_FILE) || '{"uploads":[]}');
