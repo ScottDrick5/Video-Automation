@@ -445,11 +445,14 @@ function draftsShown(id, titles) {
   })(${JSON.stringify(titles)})`) || "{}");
 }
 
-// Open the Content list and wait until its rows show (or there are none)
-function openContent(id) {
-  js(id, `location.href = ${JSON.stringify(YT_CONTENT)}; "ok"`);
+// The Content list with its Visibility filter set to drafts only (new drafts sometimes don't show in the plain list)
+const YT_DRAFTS = YT_CONTENT + "?filter=" + encodeURIComponent(JSON.stringify([{ name: "VISIBILITY", value: ["DRAFT"] }]));
+
+// Open the Content list (drafts only, or the plain list) and wait until its rows show (or there are none)
+function openContent(id, plain) {
+  js(id, `location.href = ${JSON.stringify(plain ? YT_CONTENT : YT_DRAFTS)}; "ok"`);
   waitLoaded(id);
-  const end = Date.now() + 30000;
+  const end = Date.now() + 15000; // the drafts-only list may have no rows at all
   while (Date.now() < end) {
     const n = js(id, `(function () { ${FIND_JS} return String(everything(document).filter((e) => e.tagName === "YTCP-VIDEO-ROW" && visible(e)).length); })()`);
     if (Number(n) > 0) return;
@@ -548,16 +551,25 @@ function youtubeFolder(group, remember, review) {
 
     for (const item of work) {
       log(`  opening the draft "${item.title}"...`);
-      openContent(id);
-      const end = Date.now() + 60000;
+      // new drafts can take a while to show: look in the drafts-only list, then reload it (and the plain list)
+      // every 15 seconds for up to 3 minutes
+      const end = Date.now() + 3 * 60000;
       let row = "";
+      let tries = 0;
       while (Date.now() < end) {
-        row = js(id, `(function (title) { ${FIND_JS} ${ROW_JS}
-          const r = rowFor(title);
-          return r ? r.innerText.replace(/\\s+/g, " ").slice(0, 300) : "";
-        })(${JSON.stringify(item.title)})`);
+        openContent(id, tries % 2 === 1);
+        tries++;
+        const reloadAt = Date.now() + 15000;
+        while (Date.now() < reloadAt) {
+          row = js(id, `(function (title) { ${FIND_JS} ${ROW_JS}
+            const r = rowFor(title);
+            return r ? r.innerText.replace(/\\s+/g, " ").slice(0, 300) : "";
+          })(${JSON.stringify(item.title)})`);
+          if (row) break;
+          nap(2);
+        }
         if (row) break;
-        nap(2);
+        if (tries === 2) log("  the new draft isn't showing in the Content list yet; reloading it...");
       }
       if (!row) throw new Error(`Couldn't find the draft "${item.title}" in the Content list${dump(id)}`);
       if (LIMIT_TEXT.test(row)) {
@@ -1434,7 +1446,7 @@ function run(argv) {
   const here = argv[argv.length - 1] || ".";
   U = eval(`(function () { var module = { exports: {} }; ${readText(here + "/upload-rules.js")}
     return module.exports; })()`);
-  log(`(Upload version 11-12c, rules ${U.RULES_VERSION || "old"})`);
+  log(`(Upload version 11-12d, rules ${U.RULES_VERSION || "old"})`);
   if (!["youtube", "facebook", "tiktok"].includes(platform)) return `Uploading to ${platform} isn't built yet.`;
 
   const record = JSON.parse(readText(UPLOADS_FILE) || '{"uploads":[]}');
