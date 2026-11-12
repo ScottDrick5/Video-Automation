@@ -26,8 +26,28 @@ class AfterFilePicked extends Error {} // failed after the file was chosen: that
 class UploadLimit extends Error {} // YouTube says the daily upload limit is reached
 class StopRequested extends Error {} // the panel's Stop button
 const STOP_FILE = "/Users/Shared/VidAuto/stop.txt";
+let stopHold = 0; // above 0 while the final Schedule click is being confirmed: Stop waits until that's done
 function checkStop() {
-  if (exists(STOP_FILE)) throw new StopRequested("Stopped by you");
+  if (!stopHold && exists(STOP_FILE)) throw new StopRequested("Stopped by you");
+}
+// Every wait in this script: checks the panel's Stop button four times a second, so Stop works right away
+function delay(seconds) {
+  const end = Date.now() + seconds * 1000;
+  for (;;) {
+    checkStop();
+    const left = end - Date.now();
+    if (left <= 0) return;
+    $.NSThread.sleepForTimeInterval(Math.min(0.25, left / 1000));
+  }
+}
+// Run fn without stopping in the middle (the last click and its confirmation)
+function noStop(fn) {
+  stopHold++;
+  try {
+    return fn();
+  } finally {
+    stopHold--;
+  }
 }
 const LIMIT_TEXT = /daily upload limit|upload limit (reached|exceeded)|reached (your|the) (daily )?(upload )?limit|can.t upload more videos/i;
 const DEFAULT_PAUSE_MINUTES = 1; // short wait between folders
@@ -327,12 +347,14 @@ function fillAndSchedule(id, item, review, limitShown) {
       log('  then click "Schedule" yourself (or fix anything first).');
       return true;
     }
-    jsClick(id, ["#done-button"], 'the "Schedule" button');
-    delay(4);
-    const after = js(id, "document.body.innerText.slice(0, 3000)");
-    if (!/scheduled|video published|video saved/i.test(after)) log("  (couldn't confirm the \"Video scheduled\" message; check YouTube Studio)");
-    log(`  scheduled on YouTube for ${day} ${time}`);
-    delay(3);
+    noStop(() => {
+      jsClick(id, ["#done-button"], 'the "Schedule" button');
+      delay(4);
+      const after = js(id, "document.body.innerText.slice(0, 3000)");
+      if (!/scheduled|video published|video saved/i.test(after)) log("  (couldn't confirm the \"Video scheduled\" message; check YouTube Studio)");
+      log(`  scheduled on YouTube for ${day} ${time}`);
+      delay(3);
+    });
   return false;
 }
 
@@ -391,70 +413,144 @@ function pickAllIn(folder, firstFile) {
   delay(3);
 }
 
-// A whole date folder at once: upload all its videos together (they arrive as private drafts), then open each
-// draft from the Content list and fill in its credit and schedule. remember(item, note) records an upload.
-// Returns how many were scheduled; throws UploadLimit when YouTube refuses more.
-function youtubeFolder(group, remember) {
-  const batch = "/Users/Shared/VidAuto/upload-batch";
-  sh(`rm -rf ${q(batch)} && mkdir -p ${q(batch)}`);
-  for (const it of group) {
-    const src = `${CLIPS_DIR}/${it.folder}/${it.file}`;
-    sh(`ln -f ${q(src)} ${q(batch + "/" + it.file)} 2>/dev/null || cp ${q(src)} ${q(batch + "/")}`);
+// YouTube Studio's Content list (your uploads, newest first), where each draft has an "Edit draft" button
+const YT_CONTENT = `https://studio.youtube.com/channel/${YT_CHANNEL}/videos/upload`;
+// Page code: the Content list's row for a title, preferring a draft (one with "Edit draft") over a video with the
+// same title that's already scheduled or published
+const ROW_JS = `
+  function editDraftButton(r) { return everything(r).find((e) => e.children.length === 0 && /^edit draft$/i.test((e.textContent || "").trim())) || null; }
+  function rowFor(title) {
+    const rows = everything(document).filter((e) => e.tagName === "YTCP-VIDEO-ROW" && visible(e) && (e.innerText || "").includes(title));
+    return rows.find((r) => editDraftButton(r)) || rows[0] || null;
+  }`;
+
+// Drafts already in YouTube Studio with these titles: { title: "ok" | "broken: <what YouTube says>" }.
+// A draft whose upload was cancelled or refused can't be finished ("broken").
+function draftsShown(id, titles) {
+  return JSON.parse(js(id, `(function (titles) { ${FIND_JS} ${ROW_JS}
+    const out = {};
+    for (const t of titles) {
+      const r = rowFor(t);
+      if (!r) continue;
+      const text = (r.innerText || "").replace(/\\s+/g, " ");
+      const isDraft = !!editDraftButton(r) || /\\bdraft\\b/i.test(text);
+      if (!isDraft) continue;
+      const bad = text.match(/(upload (was )?(canceled|cancelled|failed|abandoned)|processing abandoned|daily upload limit|error[^.]*)/i);
+      out[t] = bad ? "broken: " + bad[0] : "ok";
+    }
+    return JSON.stringify(out);
+  })(${JSON.stringify(titles)})`) || "{}");
+}
+
+// Open the Content list and wait until its rows show (or there are none)
+function openContent(id) {
+  js(id, `location.href = ${JSON.stringify(YT_CONTENT)}; "ok"`);
+  waitLoaded(id);
+  const end = Date.now() + 30000;
+  while (Date.now() < end) {
+    const n = js(id, `(function () { ${FIND_JS} return String(everything(document).filter((e) => e.tagName === "YTCP-VIDEO-ROW" && visible(e)).length); })()`);
+    if (Number(n) > 0) return;
+    delay(1);
   }
-  const id = openTab(`https://studio.youtube.com/channel/${YT_CHANNEL}/videos/upload?d=ud`);
+}
+
+// A whole date folder at once: first looks in YouTube Studio for drafts of these videos (from an earlier run that
+// stopped) and uses those instead of uploading again; uploads the rest together (they arrive as private drafts);
+// then opens each draft from the Content list and fills in its credit and schedule. remember(item, note) records an
+// upload. review = true (the test): fills in the first video and stops before its "Schedule" click, leaving the tab
+// open. Returns how many were scheduled; throws UploadLimit when YouTube refuses more.
+function youtubeFolder(group, remember, review) {
+  const batch = "/Users/Shared/VidAuto/upload-batch";
+  const id = openTab(YT_CONTENT);
   const limitShown = () => LIMIT_TEXT.test(js(id, "document.body.innerText"));
   let uploaded = false;
+  let uploading = false;
   let scheduled = 0;
+  let keepOpen = false;
   const pending = new Set(group.map((g) => g.key));
   try {
-    waitFor(id, ["#select-files-button", "text:Select files"], 60, 'YouTube Studio\'s "Select files" button');
-    if (limitShown()) throw new UploadLimit("YouTube says the daily upload limit is reached");
-    realClick(id, ["#select-files-button", "text:Select files"], 'the "Select files" button');
-    pickAllIn(batch, group[0].file);
+    // drafts already there from an earlier run: finish those instead of uploading them again
+    openContent(id);
+    const drafts = draftsShown(id, group.map((g) => g.title));
+    const broken = Object.keys(drafts).filter((t) => drafts[t] !== "ok");
+    if (broken.length) {
+      throw new Error(`These drafts in YouTube Studio can't be finished (${broken.map((t) => `${t}: ${drafts[t].slice(8)}`).join("; ")}). ` +
+        "Delete them in YouTube Studio's Content list, then run Upload again (they'll be uploaded fresh)");
+    }
+    const have = group.filter((g) => drafts[g.title] === "ok");
+    if (have.length) log(`  already in YouTube Studio as drafts, so not uploaded again: ${have.map((g) => g.file).join(", ")}`);
+    const todo = group.filter((g) => drafts[g.title] !== "ok" && !g.draft);
+    for (const g of group) {
+      if (g.draft && drafts[g.title] !== "ok") {
+        // recorded as a draft by an earlier run, but it isn't one any more: you finished (or deleted) it by hand
+        log(`  ${g.file}: no longer a draft in YouTube Studio (finished by hand?), so it's skipped`);
+        remember(g, "draft finished by hand");
+        pending.delete(g.key);
+      }
+    }
+    const work = group.filter((g) => pending.has(g.key));
 
-    // wait until YouTube has taken every file
-    const until = Date.now() + 60 * 60000;
-    let text = "";
-    let lastNote = 0;
-    const started = Date.now();
-    for (;;) {
-      delay(5);
-      if (!uploaded) checkStop(); // nothing uploaded yet: safe to stop
-      text = js(id, "document.body.innerText");
-      const busy = /uploading\s*\d+\s*%|waiting\b|upload(ing)? (in progress|starting)/i.test(text);
-      if (/upload complete|processing|checks complete|uploads complete/i.test(text) && !busy) break;
-      if (!uploaded && !/select files|drag and drop/i.test(text)) uploaded = true;
-      if (!uploaded && Date.now() - started > 45000) {
-        // the file window didn't hand over the files: nothing was uploaded
-        throw new Error("The videos weren't picked in the Mac's file window (nothing was uploaded). Close any open file window and run Upload again.");
+    if (todo.length) {
+      sh(`rm -rf ${q(batch)} && mkdir -p ${q(batch)}`);
+      for (const it of todo) {
+        const src = `${CLIPS_DIR}/${it.folder}/${it.file}`;
+        sh(`ln -f ${q(src)} ${q(batch + "/" + it.file)} 2>/dev/null || cp ${q(src)} ${q(batch + "/")}`);
       }
-      if (Date.now() - lastNote > 60000) {
-        lastNote = Date.now();
-        const pct = text.match(/uploading\s*\d+\s*%/gi);
-        log(`  uploading ${group.length} video(s)${pct ? ": " + pct.join(", ") : "..."}`);
+      js(id, `location.href = ${JSON.stringify(YT_CONTENT + "?d=ud")}; "ok"`);
+      waitLoaded(id);
+      waitFor(id, ["#select-files-button", "text:Select files"], 60, 'YouTube Studio\'s "Select files" button');
+      if (limitShown()) throw new UploadLimit("YouTube says the daily upload limit is reached");
+      realClick(id, ["#select-files-button", "text:Select files"], 'the "Select files" button');
+      pickAllIn(batch, todo[0].file);
+      uploading = true;
+
+      // wait until YouTube has taken every file
+      const until = Date.now() + 60 * 60000;
+      let text = "";
+      let lastNote = 0;
+      let doneSince = 0;
+      const started = Date.now();
+      for (;;) {
+        delay(5);
+        text = js(id, "document.body.innerText");
+        const pcts = text.match(/uploading\s*\d+\s*%/gi);
+        const done = /upload complete|processing|checks complete|uploads complete/i.test(text);
+        if (done && !pcts) {
+          // finished; YouTube may still say "Waiting" for a moment, so give that 20 seconds at most
+          if (!/\bwaiting\b/i.test(text) || (doneSince && Date.now() - doneSince > 20000)) break;
+          if (!doneSince) doneSince = Date.now();
+        } else doneSince = 0;
+        if (!uploaded && !/select files|drag and drop/i.test(text)) uploaded = true;
+        if (!uploaded && Date.now() - started > 45000) {
+          uploading = false;
+          throw new Error("The videos weren't picked in the Mac's file window (nothing was uploaded). Close any open file window and run Upload again.");
+        }
+        if (Date.now() - lastNote > 60000) {
+          lastNote = Date.now();
+          log(`  uploading ${todo.length} video(s)${pcts ? ": " + pcts.join(", ") : "..."}`);
+        }
+        if (Date.now() > until) throw new Error("The uploads didn't finish within an hour");
       }
-      if (Date.now() > until) throw new Error("The uploads didn't finish within an hour");
+      uploaded = true;
+      uploading = false;
+      log(`  all ${todo.length} uploaded as drafts${LIMIT_TEXT.test(text) ? " (YouTube says the upload limit was reached for some)" : ""}`);
+      try {
+        jsClick(id, ["#close-button", "#ytcp-uploads-dialog-close-button", 'ytcp-button[aria-label="Close"]'], "the upload window's close button");
+      } catch (e) {
+        // it may close by itself
+      }
+      delay(2);
     }
     uploaded = true;
-    log(`  all ${group.length} uploaded as drafts${LIMIT_TEXT.test(text) ? " (YouTube says the upload limit was reached for some)" : ""}`);
-    try {
-      jsClick(id, ["#close-button", "#ytcp-uploads-dialog-close-button", 'ytcp-button[aria-label="Close"]'], "the upload window's close button");
-    } catch (e) {
-      // it may close by itself
-    }
-    delay(2);
 
-    for (const item of group) {
-      checkStop(); // the rest stay private drafts (listed in the log)
-      // the Content list, newest first, where each draft has an "Edit draft" button
-      js(id, `location.href = "https://studio.youtube.com/channel/${YT_CHANNEL}/videos/upload"; "ok"`);
-      waitLoaded(id);
+    for (const item of work) {
+      log(`  opening the draft "${item.title}"...`);
+      openContent(id);
       const end = Date.now() + 60000;
       let row = "";
       while (Date.now() < end) {
-        row = js(id, `(function (title) { ${FIND_JS}
-          const rows = everything(document).filter((e) => e.tagName === "YTCP-VIDEO-ROW" && visible(e));
-          const r = rows.find((x) => (x.innerText || "").includes(title));
+        row = js(id, `(function (title) { ${FIND_JS} ${ROW_JS}
+          const r = rowFor(title);
           return r ? r.innerText.replace(/\\s+/g, " ").slice(0, 300) : "";
         })(${JSON.stringify(item.title)})`);
         if (row) break;
@@ -467,17 +563,21 @@ function youtubeFolder(group, remember) {
         throw new UploadLimit(`YouTube refused "${item.title}" (daily upload limit). Delete its draft in YouTube Studio; it goes up on the next run.`);
       }
       log(`${item.file} -> ${U.studioDate(item.when)} ${U.studioTime(item.when)}`);
-      const opened = js(id, `(function (title) { ${FIND_JS}
-        const r = everything(document).filter((e) => e.tagName === "YTCP-VIDEO-ROW").find((x) => (x.innerText || "").includes(title));
+      const opened = js(id, `(function (title) { ${FIND_JS} ${ROW_JS}
+        const r = rowFor(title);
         if (!r) return "no row";
-        const b = everything(r).find((e) => e.children.length === 0 && /^edit draft$/i.test((e.textContent || "").trim()));
-        if (!b) return "no Edit draft button";
+        const b = editDraftButton(r);
+        if (!b) return "no Edit draft button (row shows: " + (r.innerText || "").replace(/\\s+/g, " ").slice(0, 120) + ")";
         (b.closest("button, ytcp-button, [role=button]") || b).click();
         return "ok";
       })(${JSON.stringify(item.title)})`);
       if (opened !== "ok") throw new Error(`Couldn't open the draft "${item.title}" (${opened})${dump(id)}`);
       waitFor(id, ["#title-textarea #textbox", "#title-textarea [contenteditable]"], 60, "The draft's details window");
-      fillAndSchedule(id, item, false, limitShown);
+      if (fillAndSchedule(id, item, review, limitShown)) {
+        keepOpen = true; // the test: you click Schedule
+        pending.delete(item.key);
+        return 0;
+      }
       remember(item, "");
       pending.delete(item.key);
       scheduled++;
@@ -485,17 +585,20 @@ function youtubeFolder(group, remember) {
     }
     return scheduled;
   } catch (e) {
-    if (uploaded && pending.size) {
-      // Videos left unscheduled are private drafts in YouTube Studio. Ones YouTube refused (upload limit) aren't
-      // usable: they go up again next run. The others are remembered so they're never uploaded twice.
+    if (uploading && e instanceof StopRequested) {
+      // stopped while the files were still going up: closing the tab cancels those uploads
+      e.message += "\n    The uploads in progress were cancelled; if YouTube Studio shows those drafts as cancelled, delete them (they're uploaded again next run).";
+    } else if (uploaded && pending.size) {
+      // Videos left unscheduled are private drafts in YouTube Studio; the next run finds them there and finishes
+      // them (they're never uploaded twice). Ones YouTube refused (upload limit) aren't usable: deleted and redone.
       const finish = [];
       const redo = [];
       for (const item of group) {
         if (!pending.has(item.key)) continue;
         let row = "";
         try {
-          row = js(id, `(function (title) { ${FIND_JS}
-            const r = everything(document).filter((x) => x.tagName === "YTCP-VIDEO-ROW").find((x) => (x.innerText || "").includes(title));
+          row = js(id, `(function (title) { ${FIND_JS} ${ROW_JS}
+            const r = rowFor(title);
             return r ? r.innerText : "";
           })(${JSON.stringify(item.title)})`);
         } catch (err) {
@@ -507,13 +610,13 @@ function youtubeFolder(group, remember) {
           finish.push(item.title);
         }
       }
-      if (finish.length) e.message += `\n    Private drafts to finish and schedule by hand in YouTube Studio: ${finish.join("; ")}`;
+      if (finish.length) e.message += `\n    Private drafts in YouTube Studio (the next run finishes and schedules them, or do it by hand): ${finish.join("; ")}`;
       if (redo.length) e.message += `\n    Refused by YouTube (delete these drafts; they're uploaded again next run): ${redo.join("; ")}`;
     }
     e.scheduled = scheduled;
     throw e;
   } finally {
-    closeTab(id);
+    if (!keepOpen) closeTab(id);
   }
 }
 
@@ -1037,18 +1140,20 @@ function facebook(item, review) {
       log('  then click "Schedule" yourself (or fix anything first).');
       return true;
     }
-    if (!fbButton(id, "Schedule", true)) throw new Error(`Couldn't press the "Schedule" button${dump(id)}`);
-    // done when the reel window closes or Business Suite says it's scheduled
-    const until = Date.now() + 90000;
     let ok = false;
-    while (Date.now() < until) {
-      delay(2);
-      const page = js(id, "location.href + ' ' + document.body.innerText.slice(0, 4000)");
-      if (/scheduled/i.test(page) || !/Scheduling options/.test(page)) {
-        ok = true;
-        break;
+    noStop(() => {
+      if (!fbButton(id, "Schedule", true)) throw new Error(`Couldn't press the "Schedule" button${dump(id)}`);
+      // done when the reel window closes or Business Suite says it's scheduled
+      const until = Date.now() + 90000;
+      while (Date.now() < until) {
+        delay(2);
+        const page = js(id, "location.href + ' ' + document.body.innerText.slice(0, 4000)");
+        if (/scheduled/i.test(page) || !/Scheduling options/.test(page)) {
+          ok = true;
+          break;
+        }
       }
-    }
+    });
     if (!ok) throw new AfterFilePicked("Pressed Schedule, but Business Suite didn't confirm it; check Planner in Business Suite (it may be scheduled)");
     log(`  scheduled on Facebook for ${day} ${time}`);
     keepOpen = false;
@@ -1267,45 +1372,47 @@ function tiktok(item, review) {
       return true;
     }
     if (!btn.enabled) throw new Error(`TikTok's "Schedule" button is greyed out${dump(id)}`);
-    jsClick(id, ['[data-vidauto="tt-post"]'], 'the "Schedule" button');
-    // done when TikTok moves on to your posts list or says it's scheduled. If TikTok is still checking the video it
-    // asks "Continue to post?": with Schedule chosen and the date and time checked again, press its "Post now"
-    // (that goes ahead with the scheduled post, it doesn't post right away).
-    const until = Date.now() + 3 * 60000;
     let ok = false;
-    let confirmed = false;
-    while (Date.now() < until) {
-      delay(2);
-      const page = js(id, "location.href + ' ' + document.body.innerText.slice(0, 6000)");
-      if (/\/tiktokstudio\/content|\/manage/i.test(page.split(" ")[0]) || /(has been|been|successfully) scheduled|manage your posts/i.test(page)) {
-        ok = true;
-        break;
-      }
-      if (TT_BLOCKED.test(page)) break;
-      if (!confirmed && /continue to post\?|still checking your video/i.test(page)) {
-        const w2 = fbWhen(id);
-        const scheduleOn = js(id, `(function () {
-          const r = document.querySelector('input[type="radio"][value="schedule"]');
-          return r ? String(r.checked) : "unknown";
-        })()`);
-        if (scheduleOn === "false" || !sameDay(w2.date, item.when) || !sameClock(w2.time, item.when)) {
-          throw new AfterFilePicked(`TikTok asks "Continue to post?" but the schedule doesn't look right (${scheduleOn === "false" ? "Schedule isn't chosen" : w2.date + " " + w2.time}), so "Post now" wasn't pressed. Check the open TikTok tab`);
+    noStop(() => {
+      jsClick(id, ['[data-vidauto="tt-post"]'], 'the "Schedule" button');
+      // done when TikTok moves on to your posts list or says it's scheduled. If TikTok is still checking the video it
+      // asks "Continue to post?": with Schedule chosen and the date and time checked again, press its "Post now"
+      // (that goes ahead with the scheduled post, it doesn't post right away).
+      const until = Date.now() + 3 * 60000;
+      let confirmed = false;
+      while (Date.now() < until) {
+        delay(2);
+        const page = js(id, "location.href + ' ' + document.body.innerText.slice(0, 6000)");
+        if (/\/tiktokstudio\/content|\/manage/i.test(page.split(" ")[0]) || /(has been|been|successfully) scheduled|manage your posts/i.test(page)) {
+          ok = true;
+          break;
         }
-        const pressed = js(id, `(function () {
-          const vis = (e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; };
-          // the window's "Post now" button (the only one on the page; the form's own button says "Schedule")
-          const say = (x) => (x.innerText || x.textContent || "").replace(/\\s+/g, " ").trim().toLowerCase();
-          const all = [...document.querySelectorAll("button, [role=button]")].filter((x) => vis(x) && say(x) === "post now");
-          const b = all[all.length - 1];
-          if (!b) return "";
-          b.click();
-          return "ok";
-        })()`);
-        if (pressed !== "ok") throw new AfterFilePicked(`TikTok asks "Continue to post?" and its "Post now" button couldn't be found; press it yourself in the open TikTok tab${dump(id)}`);
-        confirmed = true;
-        log('  TikTok was still checking the video; pressed "Post now" to go ahead with the schedule');
+        if (TT_BLOCKED.test(page)) break;
+        if (!confirmed && /continue to post\?|still checking your video/i.test(page)) {
+          const w2 = fbWhen(id);
+          const scheduleOn = js(id, `(function () {
+            const r = document.querySelector('input[type="radio"][value="schedule"]');
+            return r ? String(r.checked) : "unknown";
+          })()`);
+          if (scheduleOn === "false" || !sameDay(w2.date, item.when) || !sameClock(w2.time, item.when)) {
+            throw new AfterFilePicked(`TikTok asks "Continue to post?" but the schedule doesn't look right (${scheduleOn === "false" ? "Schedule isn't chosen" : w2.date + " " + w2.time}), so "Post now" wasn't pressed. Check the open TikTok tab`);
+          }
+          const pressed = js(id, `(function () {
+            const vis = (e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; };
+            // the window's "Post now" button (the only one on the page; the form's own button says "Schedule")
+            const say = (x) => (x.innerText || x.textContent || "").replace(/\\s+/g, " ").trim().toLowerCase();
+            const all = [...document.querySelectorAll("button, [role=button]")].filter((x) => vis(x) && say(x) === "post now");
+            const b = all[all.length - 1];
+            if (!b) return "";
+            b.click();
+            return "ok";
+          })()`);
+          if (pressed !== "ok") throw new AfterFilePicked(`TikTok asks "Continue to post?" and its "Post now" button couldn't be found; press it yourself in the open TikTok tab${dump(id)}`);
+          confirmed = true;
+          log('  TikTok was still checking the video; pressed "Post now" to go ahead with the schedule');
+        }
       }
-    }
+    });
     if (!ok) throw new AfterFilePicked("Pressed Schedule, but TikTok didn't confirm it; check your posts in TikTok Studio (it may be scheduled)");
     log(`  scheduled on TikTok for ${day} ${time}`);
     keepOpen = false;
@@ -1324,11 +1431,15 @@ function run(argv) {
   const here = argv[argv.length - 1] || ".";
   U = eval(`(function () { var module = { exports: {} }; ${readText(here + "/upload-rules.js")}
     return module.exports; })()`);
-  log(`(Upload version 11-11h, rules ${U.RULES_VERSION || "old"})`);
+  log(`(Upload version 11-12a, rules ${U.RULES_VERSION || "old"})`);
   if (!["youtube", "facebook", "tiktok"].includes(platform)) return `Uploading to ${platform} isn't built yet.`;
 
   const record = JSON.parse(readText(UPLOADS_FILE) || '{"uploads":[]}');
-  const uploaded = new Set(record.uploads.map((x) => x.key));
+  // the last note for each video; YouTube videos an earlier run left as drafts aren't done: the run finishes them
+  const lastNote = {};
+  for (const x of record.uploads) lastNote[x.key] = x.note || "";
+  const leftAsDraft = (k) => platform === "youtube" && /^draft on YouTube/i.test(lastNote[k] || "");
+  const uploaded = new Set(Object.keys(lastNote).filter((k) => !leftAsDraft(k)));
   const folders = listDir(CLIPS_DIR)
     .filter((n) => U.folderDay(n))
     .map((n) => ({ name: n, files: listDir(`${CLIPS_DIR}/${n}`) }))
@@ -1344,6 +1455,7 @@ function run(argv) {
   }
 
   const plan = U.uploadPlan(platform, folders, uploaded, new Date());
+  for (const it of plan.items) if (leftAsDraft(it.key)) it.draft = true;
   let items = limit ? plan.items.slice(0, limit) : plan.items;
   // never go over the daily upload limit (counting what was already uploaded today)
   const limits = Object.assign({}, DEFAULT_DAILY_LIMIT, JSON.parse(readText(LIMITS_FILE) || "{}"));
@@ -1399,7 +1511,7 @@ function run(argv) {
     try {
       if (platform === "facebook") facebook(item, true);
       else if (platform === "tiktok") tiktok(item, true);
-      else youtube(item, true);
+      else youtubeFolder([item], remember, true); // the same way as a full run, stopping before "Schedule"
       remember(item, "test: you click Schedule");
       log(`=== TEST done: waiting for you to click Schedule in the open ${site} tab.`);
       return `Test: everything is filled in on ${site}; check it and click Schedule in the open tab.`;

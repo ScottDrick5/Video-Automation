@@ -49,10 +49,15 @@ const FIND_EDITOR_JS = `function findEditor() {
     return lowest(ask) || lowest(boxes.filter((e) => !inChat(e))) || lowest(boxes);
   }`;
 
-// Like delay(), but stops the run as soon as you press Stop
+// Like delay(), but stops the run as soon as you press Stop (checks four times a second)
 function wait(seconds) {
-  if (exists(STOP_FILE)) throw new StopRequested("Stopped by you");
-  delay(seconds);
+  const end = Date.now() + seconds * 1000;
+  for (;;) {
+    if (exists(STOP_FILE)) throw new StopRequested("Stopped by you");
+    const left = end - Date.now();
+    if (left <= 0) return;
+    $.NSThread.sleepForTimeInterval(Math.min(0.25, left / 1000));
+  }
 }
 
 // ------------------------------------------------------------------ small helpers
@@ -599,7 +604,7 @@ function run(argv) {
   const dates = asked ? R.nextFreeDates(new Date(), taken, asked) : R.weekBatch(new Date(), taken);
   const count = dates.length;
 
-  log("(Get Stories version 11-03a)");
+  log("(Get Stories version 11-12a)");
   log(`=== Getting ${count} stor${count === 1 ? "y" : "ies"} for ${dates.join(", ")}`);
   let posts;
   try {

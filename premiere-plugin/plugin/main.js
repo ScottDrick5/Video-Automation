@@ -46,7 +46,7 @@ const ARROW_TRACK = 2; // V3
 const ARROW_SECONDS = 5;
 const CLIP_ARROW_AT = 5; // seconds into each clip
 const TICKS_PER_SECOND = 254016000000;
-const PLUGIN_VERSION = "0.9.3";
+const PLUGIN_VERSION = "0.9.4";
 
 const state = { clip: null, transcript: null, cut: null, sequence: null };
 
@@ -1105,8 +1105,8 @@ function setRunStatus(cls, text) {
 async function requestStop() {
   state.stopRequested = true;
   await writeTextFile(STOP_FILE, "stop\n");
-  setRunStatus("", "stopping after the current step...");
-  log("STOP requested: finishing the current step, then stopping (an export in progress can be cancelled in Premiere).");
+  setRunStatus("", "stopping...");
+  log("STOP requested: Get Stories and Upload stop right away; making a video stops at its next step (an export in progress can be cancelled in Premiere).");
 }
 
 async function clearStop() {

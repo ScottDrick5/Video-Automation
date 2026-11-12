@@ -6,9 +6,9 @@ and never deletes anything.
 
 ## Weekly use (one click)
 
-**Stop** (next to Run) stops any run at the next safe point: after the current story, between date folders when
-making videos, and before the next draft or folder when uploading (videos already uploaded stay private drafts and
-are listed in the log). An export that's in progress can be cancelled in Premiere. A `.command` file running in
+**Stop** (next to Run) stops Get Stories and Upload right away (within a second; the only wait is while a final
+Schedule click is being confirmed, so nothing is half-posted). Making videos stops at its next step; an export
+that's in progress can be cancelled in Premiere. A `.command` file running in
 Terminal stops with Ctrl+C.
 
 1. Open Chrome (signed in to chatgpt.com and reddit.com) and Premiere with **AITA Template.prproj**, Text panel
@@ -112,7 +112,10 @@ Protecting your daily upload limit:
   that's already posted (e.g. 10-05-26) and the platforms, and those videos are never uploaded again.
 - It uploads one date folder at a time: all of that folder's videos are sent together (they arrive as private
   drafts), then it opens each draft from the Content list, changes the credit and schedules it. If something stops
-  it partway, the unfinished ones stay private drafts (the log lists them) and are never uploaded twice.
+  it partway, the unfinished ones stay private drafts (the log lists them). Before uploading, every run looks in
+  YouTube Studio's Content list: a video that's already there as a draft is finished and scheduled from that draft
+  instead of being uploaded again. With **Test: just one** it goes the same way and stops before the first video's
+  Schedule click.
 - It waits 1 minute between folders (`"pauseMinutes": 2` in the same file changes that).
 
 ## Stage 0: Get stories (testing, separate for now)
