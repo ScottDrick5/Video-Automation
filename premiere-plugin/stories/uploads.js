@@ -319,15 +319,29 @@ function fillAndSchedule(id, item, review, limitShown) {
     nap(1.5);
     const day = U.studioDate(item.when);
     const time = U.studioTime(item.when);
-    jsClick(id, ["#datepicker-trigger", "ytcp-date-picker #datepicker-trigger", "ytcp-text-dropdown-trigger#datepicker-trigger"], "the schedule date");
-    nap(1);
-    typeInto(id, ["ytcp-date-picker tp-yt-paper-input input", "#date-picker input", "tp-yt-paper-dialog tp-yt-paper-input input"], day, "the date box", true);
-    typeInto(id, ["#time-of-day-container input", "#time-of-day-trigger input", "ytcp-form-input-container#time-of-day-container input"], time, "the time box", true);
-    const shown = js(id, `(function () { ${FIND_JS}
-      const d = deep("#datepicker-trigger"); const t = deep("#time-of-day-container input");
-      return ((d && d.innerText) || "?").trim() + " " + ((t && t.value) || "?");
-    })()`);
+    // set the date and time, then read them back; try up to 3 times. If they still don't match, nothing is scheduled.
+    let shown = "";
+    let okWhen = false;
+    for (let attempt = 1; attempt <= 3 && !okWhen; attempt++) {
+      jsClick(id, ["#datepicker-trigger", "ytcp-date-picker #datepicker-trigger", "ytcp-text-dropdown-trigger#datepicker-trigger"], "the schedule date");
+      nap(1);
+      typeInto(id, ["ytcp-date-picker tp-yt-paper-input input", "#date-picker input", "tp-yt-paper-dialog tp-yt-paper-input input"], day, "the date box", true);
+      nap(0.5);
+      typeInto(id, ["#time-of-day-container input", "#time-of-day-trigger input", "ytcp-form-input-container#time-of-day-container input"], time, "the time box", true);
+      nap(1);
+      const w = JSON.parse(js(id, `(function () { ${FIND_JS}
+        const d = deep("#datepicker-trigger"); const t = deep("#time-of-day-container input");
+        return JSON.stringify({ date: ((d && d.innerText) || "").replace(/\\s+/g, " ").trim(), time: ((t && t.value) || "").trim() });
+      })()`) || "{}");
+      shown = `${w.date || "?"} ${w.time || "?"}`;
+      okWhen = sameDay(w.date, item.when) && sameClock(w.time, item.when);
+      if (!okWhen && attempt < 3) log(`  the schedule shows ${shown} instead of ${day} ${time}; setting it again...`);
+    }
     log(`  schedule set to ${shown.replace(/\s+/g, " ")} (wanted ${day} ${time})`);
+    if (!okWhen) {
+      throw new Error(`The schedule shows ${shown} instead of ${day} ${time}, so "${item.title}" was NOT scheduled (it stays a private draft). ` +
+        "Set its date and time in YouTube Studio and schedule it by hand, or run Upload again");
+    }
 
     // wait for the upload itself to finish before scheduling
     const end = Date.now() + 45 * 60000;
@@ -1515,7 +1529,20 @@ function run(argv) {
   const here = argv[argv.length - 1] || ".";
   U = eval(`(function () { var module = { exports: {} }; ${readText(here + "/upload-rules.js")}
     return module.exports; })()`);
-  log(`(Upload version 11-12g, rules ${U.RULES_VERSION || "old"})`);
+  // "forget <platform> <date folder> [words,words]": take those videos out of the upload record, so the next run
+  // uploads them again (e.g. ones recorded as uploaded that never made it to the site)
+  if (argv[0] === "forget") {
+    const [, plat, folder, words] = argv;
+    const want = String(words || "").split(",").map((w) => w.trim().toLowerCase()).filter(Boolean);
+    const rec = JSON.parse(readText(UPLOADS_FILE) || '{"uploads":[]}');
+    const gone = rec.uploads.filter((x) => x.key.startsWith(`${plat}|${folder}|`) &&
+      (!want.length || want.some((w) => x.key.toLowerCase().includes(w))));
+    rec.uploads = rec.uploads.filter((x) => !gone.includes(x));
+    writeText(UPLOADS_FILE, JSON.stringify(rec, null, 2));
+    const names = [...new Set(gone.map((x) => x.key.split("|")[2]))];
+    return `Forgot ${names.length} video(s) on ${plat} in ${folder}${names.length ? ": " + names.join(", ") : ""}. The next run uploads them again.`;
+  }
+  log(`(Upload version 11-12h, rules ${U.RULES_VERSION || "old"})`);
   if (!["youtube", "facebook", "tiktok"].includes(platform)) return `Uploading to ${platform} isn't built yet.`;
 
   const record = JSON.parse(readText(UPLOADS_FILE) || '{"uploads":[]}');
