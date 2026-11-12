@@ -467,7 +467,8 @@ function openContent(id, plain) {
 // open. Returns how many were scheduled; throws UploadLimit when YouTube refuses more.
 function youtubeFolder(group, remember, review) {
   const batch = "/Users/Shared/VidAuto/upload-batch";
-  const id = openTab(YT_CONTENT);
+  const id = openTab(YT_CONTENT); // the Content list and the drafts' details
+  let up = null; // a second tab for the uploads: left alone until they've all finished (moving it away asks "Leave site?")
   const limitShown = () => LIMIT_TEXT.test(js(id, "document.body.innerText"));
   let uploaded = false;
   let uploading = false;
@@ -476,8 +477,14 @@ function youtubeFolder(group, remember, review) {
   const pending = new Set(group.map((g) => g.key));
   try {
     // drafts already there from an earlier run: finish those instead of uploading them again
+    // look in the drafts-only list and in the plain list (new drafts don't always show in both)
     openContent(id);
     const drafts = draftsShown(id, group.map((g) => g.title));
+    const unseen = group.map((g) => g.title).filter((t) => !drafts[t]);
+    if (unseen.length) {
+      openContent(id, true);
+      Object.assign(drafts, draftsShown(id, unseen));
+    }
     const broken = Object.keys(drafts).filter((t) => drafts[t] !== "ok");
     if (broken.length) {
       throw new Error(`These drafts in YouTube Studio can't be finished (${broken.map((t) => `${t}: ${drafts[t].slice(8)}`).join("; ")}). ` +
@@ -488,9 +495,10 @@ function youtubeFolder(group, remember, review) {
     const todo = group.filter((g) => drafts[g.title] !== "ok" && !g.draft);
     for (const g of group) {
       if (g.draft && drafts[g.title] !== "ok") {
-        // recorded as a draft by an earlier run, but it isn't one any more: you finished (or deleted) it by hand
-        log(`  ${g.file}: no longer a draft in YouTube Studio (finished by hand?), so it's skipped`);
-        remember(g, "draft finished by hand");
+        // an earlier run left it as a draft, but its draft can't be seen now: it's never uploaded again, and it isn't
+        // marked done either (the next run looks again)
+        log(`  ${g.file}: an earlier run uploaded it, but its draft isn't showing in YouTube Studio, so it's skipped this time. ` +
+          "If it's still a draft, the next run finishes it; if you scheduled it by hand, mark it as uploaded in the panel");
         pending.delete(g.key);
       }
     }
@@ -502,11 +510,10 @@ function youtubeFolder(group, remember, review) {
         const src = `${CLIPS_DIR}/${it.folder}/${it.file}`;
         sh(`ln -f ${q(src)} ${q(batch + "/" + it.file)} 2>/dev/null || cp ${q(src)} ${q(batch + "/")}`);
       }
-      js(id, `location.href = ${JSON.stringify(YT_CONTENT + "?d=ud")}; "ok"`);
-      waitLoaded(id);
-      waitFor(id, ["#select-files-button", "text:Select files"], 60, 'YouTube Studio\'s "Select files" button');
-      if (limitShown()) throw new UploadLimit("YouTube says the daily upload limit is reached");
-      realClick(id, ["#select-files-button", "text:Select files"], 'the "Select files" button');
+      up = openTab(YT_CONTENT + "?d=ud");
+      waitFor(up, ["#select-files-button", "text:Select files"], 60, 'YouTube Studio\'s "Select files" button');
+      if (LIMIT_TEXT.test(js(up, "document.body.innerText"))) throw new UploadLimit("YouTube says the daily upload limit is reached");
+      realClick(up, ["#select-files-button", "text:Select files"], 'the "Select files" button');
       pickAllIn(batch, todo[0].file);
       uploading = true;
 
@@ -518,7 +525,7 @@ function youtubeFolder(group, remember, review) {
       const started = Date.now();
       for (;;) {
         nap(5);
-        text = js(id, "document.body.innerText");
+        text = js(up, "document.body.innerText");
         const pcts = text.match(/uploading\s*\d+\s*%/gi);
         const done = /upload complete|processing|checks complete|uploads complete/i.test(text);
         if (done && !pcts) {
@@ -539,12 +546,8 @@ function youtubeFolder(group, remember, review) {
       }
       uploaded = true;
       uploading = false;
-      log(`  all ${todo.length} uploaded as drafts${LIMIT_TEXT.test(text) ? " (YouTube says the upload limit was reached for some)" : ""}`);
-      try {
-        jsClick(id, ["#close-button", "#ytcp-uploads-dialog-close-button", 'ytcp-button[aria-label="Close"]'], "the upload window's close button");
-      } catch (e) {
-        // it may close by itself
-      }
+      log(`  all ${todo.length} uploaded as drafts${LIMIT_TEXT.test(text) ? " (YouTube says the upload limit was reached for some)" : ""}` +
+        " (the upload tab stays open until YouTube has finished with them)");
       nap(2);
     }
     uploaded = true;
@@ -632,7 +635,29 @@ function youtubeFolder(group, remember, review) {
     throw e;
   } finally {
     if (!keepOpen) closeTab(id);
+    if (up !== null) closeUploadTab(up);
   }
+}
+
+// Close the upload tab once nothing in it is still uploading (closing it earlier would cancel those uploads).
+// If you press Stop, it's closed right away.
+function closeUploadTab(up) {
+  try {
+    const end = Date.now() + 30 * 60000;
+    let noted = false;
+    while (Date.now() < end) {
+      const text = js(up, "document.body.innerText");
+      if (!/uploading\s*\d+\s*%|\bwaiting\b|upload(ing)? (in progress|starting)/i.test(text)) break;
+      if (!noted) {
+        log("  waiting for YouTube to finish the uploads before closing their tab...");
+        noted = true;
+      }
+      nap(5);
+    }
+  } catch (e) {
+    // stopped, or the tab is already gone
+  }
+  closeTab(up);
 }
 
 // ------------------------------------------------------------------ gameplay credit
@@ -1446,14 +1471,15 @@ function run(argv) {
   const here = argv[argv.length - 1] || ".";
   U = eval(`(function () { var module = { exports: {} }; ${readText(here + "/upload-rules.js")}
     return module.exports; })()`);
-  log(`(Upload version 11-12d, rules ${U.RULES_VERSION || "old"})`);
+  log(`(Upload version 11-12e, rules ${U.RULES_VERSION || "old"})`);
   if (!["youtube", "facebook", "tiktok"].includes(platform)) return `Uploading to ${platform} isn't built yet.`;
 
   const record = JSON.parse(readText(UPLOADS_FILE) || '{"uploads":[]}');
   // the last note for each video; YouTube videos an earlier run left as drafts aren't done: the run finishes them
   const lastNote = {};
   for (const x of record.uploads) lastNote[x.key] = x.note || "";
-  const leftAsDraft = (k) => platform === "youtube" && /^draft on YouTube/i.test(lastNote[k] || "");
+  // ("draft finished by hand" was written by version 11-12a-d when it couldn't see a draft: those are looked for again)
+  const leftAsDraft = (k) => platform === "youtube" && /^draft (on YouTube|finished by hand)/i.test(lastNote[k] || "");
   const uploaded = new Set(Object.keys(lastNote).filter((k) => !leftAsDraft(k)));
   const folders = listDir(CLIPS_DIR)
     .filter((n) => U.folderDay(n))
