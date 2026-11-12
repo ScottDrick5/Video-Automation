@@ -591,16 +591,36 @@ function youtubeFolder(group, remember, review) {
         throw new UploadLimit(`YouTube refused "${item.title}" (daily upload limit). Delete its draft in YouTube Studio; it goes up on the next run.`);
       }
       log(`${item.file} -> ${U.studioDate(item.when)} ${U.studioTime(item.when)}`);
-      const opened = js(id, `(function (title) { ${FIND_JS} ${ROW_JS}
-        const r = rowFor(title);
-        if (!r) return "no row";
-        const b = editDraftButton(r);
-        if (!b) return "no Edit draft button (row shows: " + (r.innerText || "").replace(/\\s+/g, " ").slice(0, 120) + ")";
-        (b.closest("button, ytcp-button, [role=button]") || b).click();
-        return "ok";
-      })(${JSON.stringify(item.title)})`);
-      if (opened !== "ok") throw new Error(`Couldn't open the draft "${item.title}" (${opened})${dump(id)}`);
-      waitFor(id, ["#title-textarea #textbox", "#title-textarea [contenteditable]"], 60, "The draft's details window");
+      // click "Edit draft". YouTube won't open a draft whose upload is still going (in the upload tab): then wait for
+      // the uploads to finish, find the draft again and click again (up to 4 times)
+      const details = ["#title-textarea #textbox", "#title-textarea [contenteditable]"];
+      let isOpen = false;
+      for (let attempt = 1; attempt <= 4 && !isOpen; attempt++) {
+        const opened = js(id, `(function (title) { ${FIND_JS} ${ROW_JS}
+          const r = rowFor(title);
+          if (!r) return "no row";
+          const b = editDraftButton(r);
+          if (!b) return "no Edit draft button (row shows: " + (r.innerText || "").replace(/\\s+/g, " ").slice(0, 120) + ")";
+          (b.closest("button, ytcp-button, [role=button]") || b).click();
+          return "ok";
+        })(${JSON.stringify(item.title)})`);
+        if (opened === "ok") {
+          const until = Date.now() + 20000;
+          while (Date.now() < until && !has(id, details)) nap(1);
+          if (has(id, details)) {
+            isOpen = true;
+            break;
+          }
+        }
+        if (attempt === 4) break;
+        log(`  the draft didn't open${opened === "ok" ? "" : ` (${opened})`}; YouTube is probably still uploading it, so waiting for the uploads to finish, then trying again...`);
+        waitForUploads(up, 15);
+        for (const url of lists) {
+          openContent(id, url);
+          if (js(id, `(function (title) { ${FIND_JS} ${ROW_JS} return rowFor(title) ? "yes" : ""; })(${JSON.stringify(item.title)})`)) break;
+        }
+      }
+      if (!isOpen) throw new Error(`The draft "${item.title}" didn't open (its details window never appeared)${dump(id)}`);
       if (fillAndSchedule(id, item, review, limitShown)) {
         keepOpen = true; // the test: you click Schedule
         pending.delete(item.key);
@@ -649,20 +669,34 @@ function youtubeFolder(group, remember, review) {
   }
 }
 
+// Wait (up to `minutes`) until nothing in the upload tab is still uploading. No upload tab: just wait 30 seconds.
+const STILL_UPLOADING = /uploading\s*\d+\s*%|\bwaiting\b|upload(ing)? (in progress|starting)/i;
+function waitForUploads(up, minutes) {
+  if (up === null) {
+    nap(30);
+    return;
+  }
+  const end = Date.now() + minutes * 60000;
+  while (Date.now() < end) {
+    let text = "";
+    try {
+      text = js(up, "document.body.innerText");
+    } catch (e) {
+      if (e instanceof StopRequested) throw e;
+      return; // the tab is gone
+    }
+    if (!STILL_UPLOADING.test(text)) return;
+    nap(5);
+  }
+}
+
 // Close the upload tab once nothing in it is still uploading (closing it earlier would cancel those uploads).
 // If you press Stop, it's closed right away.
 function closeUploadTab(up) {
   try {
-    const end = Date.now() + 30 * 60000;
-    let noted = false;
-    while (Date.now() < end) {
-      const text = js(up, "document.body.innerText");
-      if (!/uploading\s*\d+\s*%|\bwaiting\b|upload(ing)? (in progress|starting)/i.test(text)) break;
-      if (!noted) {
-        log("  waiting for YouTube to finish the uploads before closing their tab...");
-        noted = true;
-      }
-      nap(5);
+    if (STILL_UPLOADING.test(js(up, "document.body.innerText"))) {
+      log("  waiting for YouTube to finish the uploads before closing their tab...");
+      waitForUploads(up, 30);
     }
   } catch (e) {
     // stopped, or the tab is already gone
@@ -1481,7 +1515,7 @@ function run(argv) {
   const here = argv[argv.length - 1] || ".";
   U = eval(`(function () { var module = { exports: {} }; ${readText(here + "/upload-rules.js")}
     return module.exports; })()`);
-  log(`(Upload version 11-12f, rules ${U.RULES_VERSION || "old"})`);
+  log(`(Upload version 11-12g, rules ${U.RULES_VERSION || "old"})`);
   if (!["youtube", "facebook", "tiktok"].includes(platform)) return `Uploading to ${platform} isn't built yet.`;
 
   const record = JSON.parse(readText(UPLOADS_FILE) || '{"uploads":[]}');
