@@ -445,14 +445,22 @@ function draftsShown(id, titles) {
   })(${JSON.stringify(titles)})`) || "{}");
 }
 
-// The Content list with its Visibility filter set to drafts only (new drafts sometimes don't show in the plain list)
-const YT_DRAFTS = YT_CONTENT + "?filter=" + encodeURIComponent(JSON.stringify([{ name: "VISIBILITY", value: ["DRAFT"] }]));
+// The Content list's tabs: "Videos" and "Shorts" (the parts are vertical and short, so YouTube lists them under
+// Shorts), each either filtered to drafts only (new drafts sometimes don't show in the plain list) or plain
+const YT_SHORTS = `https://studio.youtube.com/channel/${YT_CHANNEL}/videos/short`;
+const DRAFTS_ONLY = "?filter=" + encodeURIComponent(JSON.stringify([{ name: "VISIBILITY", value: ["DRAFT"] }]));
+const isShort = (item) => /\(part \d+\)/i.test(item.title || item);
+// the lists to look in for a video, most likely first
+function contentLists(item) {
+  const tabs = isShort(item) ? [YT_SHORTS, YT_CONTENT] : [YT_CONTENT, YT_SHORTS];
+  return [tabs[0] + DRAFTS_ONLY, tabs[0], tabs[1] + DRAFTS_ONLY, tabs[1]];
+}
 
-// Open the Content list (drafts only, or the plain list) and wait until its rows show (or there are none)
-function openContent(id, plain) {
-  js(id, `location.href = ${JSON.stringify(plain ? YT_CONTENT : YT_DRAFTS)}; "ok"`);
+// Open one Content list and wait until its rows show (or there are none)
+function openContent(id, url) {
+  js(id, `location.href = ${JSON.stringify(url || YT_CONTENT + DRAFTS_ONLY)}; "ok"`);
   waitLoaded(id);
-  const end = Date.now() + 15000; // the drafts-only list may have no rows at all
+  const end = Date.now() + 10000; // a drafts-only list may have no rows at all
   while (Date.now() < end) {
     const n = js(id, `(function () { ${FIND_JS} return String(everything(document).filter((e) => e.tagName === "YTCP-VIDEO-ROW" && visible(e)).length); })()`);
     if (Number(n) > 0) return;
@@ -477,12 +485,13 @@ function youtubeFolder(group, remember, review) {
   const pending = new Set(group.map((g) => g.key));
   try {
     // drafts already there from an earlier run: finish those instead of uploading them again
-    // look in the drafts-only list and in the plain list (new drafts don't always show in both)
-    openContent(id);
-    const drafts = draftsShown(id, group.map((g) => g.title));
-    const unseen = group.map((g) => g.title).filter((t) => !drafts[t]);
-    if (unseen.length) {
-      openContent(id, true);
+    // look under Videos and Shorts, drafts-only and plain (new drafts don't always show in every list)
+    const drafts = {};
+    for (const url of [YT_CONTENT + DRAFTS_ONLY, YT_SHORTS + DRAFTS_ONLY, YT_CONTENT, YT_SHORTS]) {
+      const unseen = group.map((g) => g.title).filter((t) => !drafts[t]);
+      if (!unseen.length) break;
+      // a plain list only if something is still missing after both drafts-only lists
+      openContent(id, url);
       Object.assign(drafts, draftsShown(id, unseen));
     }
     const broken = Object.keys(drafts).filter((t) => drafts[t] !== "ok");
@@ -554,13 +563,14 @@ function youtubeFolder(group, remember, review) {
 
     for (const item of work) {
       log(`  opening the draft "${item.title}"...`);
-      // new drafts can take a while to show: look in the drafts-only list, then reload it (and the plain list)
-      // every 15 seconds for up to 3 minutes
+      // new drafts can take a while to show: look in the Shorts / Videos lists (drafts-only and plain), reloading
+      // them in turn every 15 seconds for up to 3 minutes
       const end = Date.now() + 3 * 60000;
       let row = "";
       let tries = 0;
+      const lists = contentLists(item);
       while (Date.now() < end) {
-        openContent(id, tries % 2 === 1);
+        openContent(id, lists[tries % lists.length]);
         tries++;
         const reloadAt = Date.now() + 15000;
         while (Date.now() < reloadAt) {
@@ -572,7 +582,7 @@ function youtubeFolder(group, remember, review) {
           nap(2);
         }
         if (row) break;
-        if (tries === 2) log("  the new draft isn't showing in the Content list yet; reloading it...");
+        if (tries === lists.length) log("  the new draft isn't showing in the Content list yet; reloading it...");
       }
       if (!row) throw new Error(`Couldn't find the draft "${item.title}" in the Content list${dump(id)}`);
       if (LIMIT_TEXT.test(row)) {
@@ -1471,7 +1481,7 @@ function run(argv) {
   const here = argv[argv.length - 1] || ".";
   U = eval(`(function () { var module = { exports: {} }; ${readText(here + "/upload-rules.js")}
     return module.exports; })()`);
-  log(`(Upload version 11-12e, rules ${U.RULES_VERSION || "old"})`);
+  log(`(Upload version 11-12f, rules ${U.RULES_VERSION || "old"})`);
   if (!["youtube", "facebook", "tiktok"].includes(platform)) return `Uploading to ${platform} isn't built yet.`;
 
   const record = JSON.parse(readText(UPLOADS_FILE) || '{"uploads":[]}');
