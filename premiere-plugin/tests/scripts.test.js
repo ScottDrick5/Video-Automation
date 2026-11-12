@@ -39,3 +39,14 @@ for (const name of ["uploads.js", "stories.js"]) {
     assert.deepStrictEqual([...missing], []);
   });
 }
+
+// macOS's script engine (JXA) has built-in names a script can't declare again: doing so stops the whole script
+// before its first line runs, with nothing in the log (this happened with a function called "delay")
+const JXA_BUILTINS = ["delay", "Application", "ObjC", "Path", "Library", "Ref", "Progress", "console"];
+for (const name of ["uploads.js", "stories.js"]) {
+  test(`${name}: doesn't declare a name the Mac's script engine already has`, () => {
+    const src = fs.readFileSync(path.join(__dirname, "..", "stories", name), "utf8");
+    const clash = JXA_BUILTINS.filter((n) => new RegExp(`(^|\\n)\\s*(function\\s+|const\\s+|let\\s+|var\\s+|class\\s+)${n}\\b`).test(src));
+    assert.deepStrictEqual(clash, []);
+  });
+}

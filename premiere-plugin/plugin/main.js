@@ -46,7 +46,7 @@ const ARROW_TRACK = 2; // V3
 const ARROW_SECONDS = 5;
 const CLIP_ARROW_AT = 5; // seconds into each clip
 const TICKS_PER_SECOND = 254016000000;
-const PLUGIN_VERSION = "0.9.4";
+const PLUGIN_VERSION = "0.9.5";
 
 const state = { clip: null, transcript: null, cut: null, sequence: null };
 
@@ -1201,8 +1201,12 @@ async function uploadTo(platform, testOne) {
     if (text.length < seen) seen = 0;
     const fresh = text.slice(seen).trim();
     seen = text.length;
-    if (fresh) fresh.split(/\n/).forEach((l) => log("  " + l.replace(/^\S+\s+(AM|PM)?\s*/, "")));
+    if (fresh) {
+      wrote = true;
+      fresh.split(/\n/).forEach((l) => log("  " + l.replace(/^\S+\s+(AM|PM)?\s*/, "")));
+    }
   };
+  let wrote = false;
   log(`--- Scheduling uploads on ${platform} (Chrome; hands off the mouse and keyboard)`);
   setRunStatus("", `scheduling uploads on ${platform}... hands off the mouse and keyboard`);
   // test: one video, filled in but not scheduled, so you can check it and click Schedule yourself
@@ -1217,7 +1221,9 @@ async function uploadTo(platform, testOne) {
     if (/RESULT|ERROR/.test(helperLog)) break;
   }
   await copyNewLines();
-  const result = (helperLog.match(/(RESULT|ERROR)[^\n]*/) || ["no result from the helper"])[0].replace(/^RESULT:\s*/, "");
+  let result = (helperLog.match(/(RESULT|ERROR)[^\n]*/) || ["no result from the helper"])[0].replace(/^RESULT:\s*/, "");
+  // the script wrote nothing at all: it stopped before its first line (a broken or half-copied script)
+  if (!wrote && /^finished/.test(result)) result = "the upload script didn't start (nothing in its log). Update the scripts again; if it keeps happening, send this to Claude";
   log(`  uploads: ${result}`);
   return result;
 }

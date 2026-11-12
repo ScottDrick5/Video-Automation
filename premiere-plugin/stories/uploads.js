@@ -31,7 +31,7 @@ function checkStop() {
   if (!stopHold && exists(STOP_FILE)) throw new StopRequested("Stopped by you");
 }
 // Every wait in this script: checks the panel's Stop button four times a second, so Stop works right away
-function delay(seconds) {
+function nap(seconds) {
   const end = Date.now() + seconds * 1000;
   for (;;) {
     checkStop();
@@ -107,9 +107,9 @@ function findTab(id) {
 
 function waitLoaded(id, seconds = 60) {
   const end = Date.now() + seconds * 1000;
-  delay(1);
-  while (Date.now() < end && findTab(id).t.loading()) delay(0.5);
-  delay(1);
+  nap(1);
+  while (Date.now() < end && findTab(id).t.loading()) nap(0.5);
+  nap(1);
 }
 
 function openTab(url) {
@@ -128,7 +128,7 @@ function front(id) {
   w.activeTabIndex = index;
   w.index = 1;
   chrome.activate();
-  delay(0.6);
+  nap(0.6);
 }
 
 function closeTab(id) {
@@ -177,7 +177,7 @@ function waitFor(id, selectors, seconds, what) {
   while (Date.now() < end) {
     const s = has(id, selectors);
     if (s) return s;
-    delay(1);
+    nap(1);
   }
   throw new Error(`${what} didn't appear${dump(id)}`);
 }
@@ -214,9 +214,9 @@ function realClick(id, selectors, what) {
   const pt = $.CGPointMake(x, y);
   const post = (type) => $.CGEventPost(0, $.CGEventCreateMouseEvent(null, type, pt, 0));
   post(5); // move
-  delay(0.4);
+  nap(0.4);
   post(1); // down
-  delay(0.1);
+  nap(0.1);
   post(2); // up
 }
 
@@ -231,13 +231,13 @@ function typeInto(id, selectors, text, what, pressReturn) {
     return "";
   })()`);
   if (r !== "ok") throw new Error(`Couldn't find ${what}${dump(id)}`);
-  delay(0.3);
+  nap(0.3);
   keys.keystroke("a", { using: "command down" });
-  delay(0.2);
+  nap(0.2);
   keys.keystroke(text);
-  delay(0.4);
+  nap(0.4);
   if (pressReturn) keys.keyCode(36);
-  delay(0.6);
+  nap(0.6);
 }
 
 // Set a text box's contents without the keyboard (for long text with line breaks)
@@ -271,15 +271,15 @@ function dump(id) {
 
 // The Mac's "choose a file" window: go to the file's exact location and open it
 function pickFile(path) {
-  delay(2);
+  nap(2);
   keys.keystroke("g", { using: ["command down", "shift down"] });
-  delay(1.2);
+  nap(1.2);
   keys.keystroke(path);
-  delay(1);
+  nap(1);
   keys.keyCode(36); // Return: go to the file
-  delay(1.5);
+  nap(1.5);
   keys.keyCode(36); // Return: open it
-  delay(2);
+  nap(2);
 }
 
 // ------------------------------------------------------------------ YouTube
@@ -287,7 +287,7 @@ function pickFile(path) {
 // On YouTube's details window for one video (new upload or draft): title, credit, "not made for kids", then the
 // schedule. review = true stops before the final "Schedule" click and returns true (leave the tab open).
 function fillAndSchedule(id, item, review, limitShown) {
-    delay(2);
+    nap(2);
     log(`  uploading; title: ${setText(id, ["#title-textarea #textbox", "#title-textarea [contenteditable]"], item.title, "the title box")}`);
     // keep your saved default description; change only the credit's name
     const descBox = ["#description-textarea #textbox", "#description-textarea [contenteditable]"];
@@ -312,15 +312,15 @@ function fillAndSchedule(id, item, review, limitShown) {
         if (limitShown() || !has(id, ["#next-button"])) throw new UploadLimit("YouTube stopped the upload (no \"Next\" button; most likely the daily upload limit)");
         throw e;
       }
-      delay(2);
+      nap(2);
     }
     waitFor(id, ["#second-container-expand-button", 'tp-yt-paper-radio-button[name="SCHEDULE"]', "text:Schedule"], 30, "The visibility page");
     jsClick(id, ["#second-container-expand-button", 'tp-yt-paper-radio-button[name="SCHEDULE"]', "text:Schedule"], 'the "Schedule" option');
-    delay(1.5);
+    nap(1.5);
     const day = U.studioDate(item.when);
     const time = U.studioTime(item.when);
     jsClick(id, ["#datepicker-trigger", "ytcp-date-picker #datepicker-trigger", "ytcp-text-dropdown-trigger#datepicker-trigger"], "the schedule date");
-    delay(1);
+    nap(1);
     typeInto(id, ["ytcp-date-picker tp-yt-paper-input input", "#date-picker input", "tp-yt-paper-dialog tp-yt-paper-input input"], day, "the date box", true);
     typeInto(id, ["#time-of-day-container input", "#time-of-day-trigger input", "ytcp-form-input-container#time-of-day-container input"], time, "the time box", true);
     const shown = js(id, `(function () { ${FIND_JS}
@@ -339,7 +339,7 @@ function fillAndSchedule(id, item, review, limitShown) {
       })()`);
       if (status && !/uploading/i.test(status)) break;
       if (!status && Date.now() > end - 45 * 60000 + 15000) break; // no progress shown (e.g. a finished draft)
-      delay(5);
+      nap(5);
     }
     log(`  upload status: ${status || "(not shown)"}`);
     if (review) {
@@ -349,11 +349,11 @@ function fillAndSchedule(id, item, review, limitShown) {
     }
     noStop(() => {
       jsClick(id, ["#done-button"], 'the "Schedule" button');
-      delay(4);
+      nap(4);
       const after = js(id, "document.body.innerText.slice(0, 3000)");
       if (!/scheduled|video published|video saved/i.test(after)) log("  (couldn't confirm the \"Video scheduled\" message; check YouTube Studio)");
       log(`  scheduled on YouTube for ${day} ${time}`);
-      delay(3);
+      nap(3);
     });
   return false;
 }
@@ -377,7 +377,7 @@ function youtube(item, review) {
     while (!has(id, ["#title-textarea #textbox", "#title-textarea [contenteditable]"])) {
       if (limitShown()) throw new UploadLimit("YouTube says the daily upload limit is reached");
       if (Date.now() > until) throw new Error(`The video details page didn't appear${dump(id)}`);
-      delay(1);
+      nap(1);
     }
     if (fillAndSchedule(id, item, review, limitShown)) keepOpen = true;
   } catch (e) {
@@ -400,17 +400,17 @@ function youtube(item, review) {
 // The Mac's "choose files" window: go to one file by its full location (that's reliable: it opens its folder
 // with the file selected), then select every file in that folder and open them.
 function pickAllIn(folder, firstFile) {
-  delay(2);
+  nap(2);
   keys.keystroke("g", { using: ["command down", "shift down"] });
-  delay(1.2);
+  nap(1.2);
   keys.keystroke(`${folder}/${firstFile}`);
-  delay(1.2);
+  nap(1.2);
   keys.keyCode(36); // Return: go to the file (its folder opens with the file selected)
-  delay(2);
+  nap(2);
   keys.keystroke("a", { using: "command down" }); // select all the files in that folder
-  delay(1);
+  nap(1);
   keys.keyCode(36); // Return: open them
-  delay(3);
+  nap(3);
 }
 
 // YouTube Studio's Content list (your uploads, newest first), where each draft has an "Edit draft" button
@@ -450,7 +450,7 @@ function openContent(id) {
   while (Date.now() < end) {
     const n = js(id, `(function () { ${FIND_JS} return String(everything(document).filter((e) => e.tagName === "YTCP-VIDEO-ROW" && visible(e)).length); })()`);
     if (Number(n) > 0) return;
-    delay(1);
+    nap(1);
   }
 }
 
@@ -511,7 +511,7 @@ function youtubeFolder(group, remember, review) {
       let doneSince = 0;
       const started = Date.now();
       for (;;) {
-        delay(5);
+        nap(5);
         text = js(id, "document.body.innerText");
         const pcts = text.match(/uploading\s*\d+\s*%/gi);
         const done = /upload complete|processing|checks complete|uploads complete/i.test(text);
@@ -539,7 +539,7 @@ function youtubeFolder(group, remember, review) {
       } catch (e) {
         // it may close by itself
       }
-      delay(2);
+      nap(2);
     }
     uploaded = true;
 
@@ -554,7 +554,7 @@ function youtubeFolder(group, remember, review) {
           return r ? r.innerText.replace(/\\s+/g, " ").slice(0, 300) : "";
         })(${JSON.stringify(item.title)})`);
         if (row) break;
-        delay(2);
+        nap(2);
       }
       if (!row) throw new Error(`Couldn't find the draft "${item.title}" in the Content list${dump(id)}`);
       if (LIMIT_TEXT.test(row)) {
@@ -581,7 +581,7 @@ function youtubeFolder(group, remember, review) {
       remember(item, "");
       pending.delete(item.key);
       scheduled++;
-      delay(2);
+      nap(2);
     }
     return scheduled;
   } catch (e) {
@@ -655,11 +655,11 @@ function paste(text) {
   const pb = $.NSPasteboard.generalPasteboard;
   pb.clearContents;
   pb.setStringForType($(text), $("public.utf8-plain-text"));
-  delay(0.3);
+  nap(0.3);
   keys.keystroke("a", { using: "command down" });
-  delay(0.2);
+  nap(0.2);
   keys.keystroke("v", { using: "command down" });
-  delay(1);
+  nap(1);
 }
 
 // Click a button by its exact words; `last` picks the lowest one on the page (e.g. the bottom "Schedule"
@@ -777,30 +777,30 @@ function fbSetWhen(id, which, text, kind) {
     for (const [name, value] of parts) {
       if (!has(id, [`input[data-vidauto="${name}"]`])) continue;
       realClick(id, [`input[data-vidauto="${name}"]`], `the time's ${name} box`);
-      delay(0.5);
+      nap(0.5);
       keys.keystroke(value);
-      delay(0.6);
+      nap(0.6);
     }
     keys.keyCode(48); // Tab: leave the time boxes
-    delay(0.8);
+    nap(0.8);
     return;
   }
   if (kind === "input") {
     typeInto(id, [`input[data-vidauto="${which}"]`], text, `the ${which} box`, true);
   } else {
     realClick(id, [`[data-vidauto="${which}"]`], `the ${which}`);
-    delay(1);
+    nap(1);
     const focused = js(id, `(document.activeElement && document.activeElement.tagName) || ""`);
     if (!/INPUT|TEXTAREA/.test(focused)) throw new Error(`Clicking the ${which} didn't open a box to type in${dump(id)}`);
     keys.keystroke("a", { using: "command down" });
-    delay(0.2);
+    nap(0.2);
     keys.keystroke(text);
-    delay(0.4);
+    nap(0.4);
     keys.keyCode(36);
   }
-  delay(0.8);
+  nap(0.8);
   keys.keyCode(53); // Escape: close a calendar or time list if one opened
-  delay(0.8);
+  nap(0.8);
 }
 
 // The date. Typing into Business Suite's date box only changes what it shows (it goes back to the old date as
@@ -813,7 +813,7 @@ function fbSetDate(id, ms) {
     if (!has(id, ['[data-vidauto="date"]'])) throw new Error(`Couldn't find the date box${dump(id)}`);
     if (tries === 0) {
       realClick(id, ['[data-vidauto="date"]'], "the date box");
-      delay(1.5);
+      nap(1.5);
     }
     const r = js(id, `(function () {
       const vis = (e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; };
@@ -864,10 +864,10 @@ function fbSetDate(id, ms) {
       return JSON.stringify({ r: "found", shown });
     })()`);
     const res = JSON.parse(r || '{"r":"?"}');
-    if (res.r === "moved") { delay(1); continue; }
+    if (res.r === "moved") { nap(1); continue; }
     if (res.r !== "found") throw new Error(`Couldn't pick ${U.studioDate(ms)} in the calendar (${res.r}${res.shown ? ", it shows " + res.shown : ""})${dump(id)}`);
     realClick(id, ['[data-vidauto="day"]'], `${U.studioDate(ms)} in the calendar`);
-    delay(1.5);
+    nap(1.5);
     if (sameDay(fbWhen(id).date, ms)) return;
     throw new Error(`Clicked ${U.studioDate(ms)} in the calendar, but the date shows ${fbWhen(id).date}`);
   }
@@ -900,7 +900,7 @@ function fbScroll(id) {
     }
     window.scrollBy(0, 500);
   })()`);
-  delay(1);
+  nap(1);
 }
 
 // Wait (scrolling down) until a section shows; true if found
@@ -928,7 +928,7 @@ function fbTags(id) {
     return JSON.stringify(box.innerText.split(/\\n/).map((t) => t.trim().toLowerCase()).filter(Boolean));
   })()`) || "null");
   if (!fbFindSection(id, "Tags", "input")) throw new Error(`Couldn't find the reel's Tags box${dump(id)}`);
-  delay(0.5);
+  nap(0.5);
   let now = have();
   if (!now) throw new Error(`Couldn't find the reel's Tags box${dump(id)}`);
   const box = () => js(id, `(function () {
@@ -946,21 +946,21 @@ function fbTags(id) {
       // leftover text in the box: clear it first
       keys.keystroke("a", { using: "command down" });
       keys.keyCode(51); // Delete
-      delay(0.3);
+      nap(0.3);
     }
     keys.keystroke(tag);
-    delay(1.5); // let its suggestion list appear before pressing Return
+    nap(1.5); // let its suggestion list appear before pressing Return
     // press Return until the tag shows as added (a slow suggestion list can swallow the first one)
     for (let i = 0; i < 3; i++) {
       keys.keyCode(36);
-      delay(1.2);
+      nap(1.2);
       now = have() || now;
       if (now.includes(tag.toLowerCase())) break;
       box();
     }
     if (!now.includes(tag.toLowerCase())) {
       keys.keystroke(","); // some tag boxes add the tag on a comma instead
-      delay(1.2);
+      nap(1.2);
       now = have() || now;
     }
     if (!now.includes(tag.toLowerCase())) throw new Error(`Couldn't add the tag ${tag} (Tags shows: ${now.join(", ")})`);
@@ -990,18 +990,18 @@ function fbPlaylist(id) {
   if (!fbFindSection(id, "Add to playlist", 'input[type="checkbox"], [role="switch"], [role="checkbox"]')) {
     throw new Error(`Couldn't find "Add to playlist"${dump(id)}`);
   }
-  delay(0.5);
+  nap(0.5);
   let st = state();
   if (!st) throw new Error(`Couldn't find "Add to playlist"${dump(id)}`);
   if (!st.on) {
     jsClick(id, ['[data-vidauto="playlist-switch"]'], 'the "Add to playlist" switch');
-    delay(1.5);
+    nap(1.5);
     st = state() || st;
     if (!st.on) throw new Error(`Couldn't switch on "Add to playlist"${dump(id)}`);
   }
   if (!st.text.includes(FB_PLAYLIST)) {
     jsClick(id, ['[data-vidauto="playlist-pick"]'], "the Playlists menu");
-    delay(1.5);
+    nap(1.5);
     const picked = js(id, `(function () {
       const want = ${JSON.stringify(FB_PLAYLIST.toLowerCase())};
       const opt = [...document.querySelectorAll('[role="option"], [role="menuitem"], [role="menuitemcheckbox"], [role="checkbox"], span, div')]
@@ -1011,9 +1011,9 @@ function fbPlaylist(id) {
       (opt.closest('[role="option"], [role="menuitem"], [role="menuitemcheckbox"], [role="checkbox"], label') || opt).click();
       return "ok";
     })()`);
-    delay(1);
+    nap(1);
     keys.keyCode(53); // Escape: close the menu if it stays open
-    delay(1);
+    nap(1);
     st = state() || st;
     if (picked !== "ok" || !st.text.includes(FB_PLAYLIST)) throw new Error(`Couldn't choose the "${FB_PLAYLIST}" playlist${dump(id)}`);
   }
@@ -1036,7 +1036,7 @@ function facebook(item, review) {
   try {
     waitFor(id, ["text:Add photo/video"], 60, 'Business Suite\'s "Add photo/video" button');
     realClick(id, ["text:Add photo/video"], 'the "Add photo/video" button');
-    delay(1.5);
+    nap(1.5);
     if (has(id, ["text:Upload from computer"])) realClick(id, ["text:Upload from computer"], '"Upload from computer"');
     pickFile(path);
     keepOpen = true; // from here on, leave the tab open if anything goes wrong so you can see it
@@ -1053,7 +1053,7 @@ function facebook(item, review) {
         return m.length ? m[0] : "";
       })()`);
       if (pct === "100%") break;
-      delay(3);
+      nap(3);
     }
     log(`  uploaded (${pct || "no progress bar shown"})`);
 
@@ -1081,7 +1081,7 @@ function facebook(item, review) {
     // Create -> Edit -> Share
     for (const step of ["Edit", "Share"]) {
       if (!fbButton(id, "Next", true)) throw new Error(`Couldn't press "Next" to go to the ${step} step${dump(id)}`);
-      delay(3);
+      nap(3);
     }
     waitFor(id, ["text:Scheduling options"], 30, 'The "Scheduling options" step');
     // back to the top of the form (it stays scrolled down from the Tags), then choose the "Schedule" option next
@@ -1091,7 +1091,7 @@ function facebook(item, review) {
       for (const e of document.querySelectorAll("div")) if (e.scrollTop > 0) e.scrollTop = 0;
       window.scrollTo(0, 0);
     })()`);
-    delay(1);
+    nap(1);
     let w = fbWhen(id);
     if (w.date === null || w.time === null) {
       const r = js(id, `(function () {
@@ -1112,7 +1112,7 @@ function facebook(item, review) {
         return "clicked";
       })()`);
       if (r !== "clicked") throw new Error(`Couldn't choose the "Schedule" option (${r})${dump(id)}`);
-      delay(1.5);
+      nap(1.5);
       w = fbWhen(id);
     }
     const day = U.studioDate(item.when);
@@ -1127,7 +1127,7 @@ function facebook(item, review) {
     w = fbWhen(id);
     if (w.date === null) throw new Error(`Couldn't find the date box (text boxes: ${w.inputs || "none"})${dump(id)}`);
     if (!sameDay(w.date, item.when)) fbSetDate(id, item.when);
-    delay(1);
+    nap(1);
     w = fbWhen(id);
     log(`  schedule set to ${w.date} ${w.time} (wanted ${day} ${time})`);
     if (!sameDay(w.date, item.when) || !sameClock(w.time, item.when)) {
@@ -1146,7 +1146,7 @@ function facebook(item, review) {
       // done when the reel window closes or Business Suite says it's scheduled
       const until = Date.now() + 90000;
       while (Date.now() < until) {
-        delay(2);
+        nap(2);
         const page = js(id, "location.href + ' ' + document.body.innerText.slice(0, 4000)");
         if (/scheduled/i.test(page) || !/Scheduling options/.test(page)) {
           ok = true;
@@ -1173,7 +1173,7 @@ const TT_BLOCKED = /verify to continue|drag the slider|select all images|captcha
 function tkSetTime(id, ms) {
   const d = new Date(ms);
   realClick(id, ['[data-vidauto="time"]'], "the time box");
-  delay(1.2);
+  nap(1.2);
   const r = js(id, `(function (h24, min) {
     const vis = (e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; };
     const say = (e) => (e.innerText || e.textContent || "").trim();
@@ -1216,12 +1216,12 @@ function tkSetTime(id, ms) {
   for (const tag of ["tt-hour", "tt-min", "tt-ampm"]) {
     if (!has(id, [`[data-vidauto="${tag}"]`])) continue;
     js(id, `(function () { const e = document.querySelector('[data-vidauto="${tag}"]'); if (e) e.scrollIntoView({ block: "nearest" }); })()`);
-    delay(0.4);
+    nap(0.4);
     realClick(id, [`[data-vidauto="${tag}"]`], "a time in TikTok's list");
-    delay(0.8);
+    nap(0.8);
   }
   keys.keyCode(53); // Escape: close the list
-  delay(0.8);
+  nap(0.8);
 }
 
 // The "Post" / "Schedule" button at the bottom: { text, enabled }
@@ -1254,7 +1254,7 @@ function tiktok(item, review) {
   const id = openTab(TT_UPLOAD);
   let keepOpen = false;
   try {
-    delay(2);
+    nap(2);
     tkCheckBlocked(id);
     const pickSel = ['[data-e2e="select_video_button"]', "text:Select video", "text:Select videos", "text:Select file", "text:Select files"];
     waitFor(id, pickSel, 60, 'TikTok Studio\'s "Select video" button');
@@ -1280,7 +1280,7 @@ function tiktok(item, review) {
         log("  still uploading to TikTok...");
         note = Date.now() + 60000;
       }
-      delay(3);
+      nap(3);
     }
     if (!btn.enabled) throw new Error(`The video didn't finish uploading to TikTok within 45 minutes${dump(id)}`);
     log("  uploaded");
@@ -1298,9 +1298,9 @@ function tiktok(item, review) {
     if (box !== "ok") throw new Error(`Couldn't find TikTok's caption box${dump(id)}`);
     front(id);
     paste(item.description);
-    delay(1);
+    nap(1);
     keys.keyCode(53); // Escape: close a hashtag suggestion list if one opened
-    delay(0.5);
+    nap(0.5);
     const got = js(id, `(function () {
       const e = [...document.querySelectorAll('.public-DraftEditor-content, [contenteditable="true"]')].find((x) => x.getBoundingClientRect().width > 0);
       return e ? e.innerText.trim() : "";
@@ -1326,12 +1326,12 @@ function tiktok(item, review) {
         return "clicked";
       })()`);
       if (r !== "clicked") throw new Error(`Couldn't choose "Schedule" under "When to post" (${r})${dump(id)}`);
-      delay(2);
+      nap(2);
       // some accounts get a one-time note about scheduled posts: close it with its OK / Got it / Allow button
       for (const words of ["Got it", "OK", "Allow"]) {
         if (has(id, [`text:${words}`]) && !fbWhen(id).date) {
           jsClick(id, [`text:${words}`], `the "${words}" button`);
-          delay(1.5);
+          nap(1.5);
         }
       }
       w = fbWhen(id);
@@ -1351,7 +1351,7 @@ function tiktok(item, review) {
         throw new Error(`${e.message}\n    date box shows "${fbWhen(id).date}"; text boxes: ${fbWhen(id).inputs}`);
       }
     }
-    delay(1);
+    nap(1);
     w = fbWhen(id);
     if (!sameClock(w.time, item.when) && w.time !== null) {
       // the date can move the time to the earliest allowed; set it again
@@ -1381,7 +1381,7 @@ function tiktok(item, review) {
       const until = Date.now() + 3 * 60000;
       let confirmed = false;
       while (Date.now() < until) {
-        delay(2);
+        nap(2);
         const page = js(id, "location.href + ' ' + document.body.innerText.slice(0, 6000)");
         if (/\/tiktokstudio\/content|\/manage/i.test(page.split(" ")[0]) || /(has been|been|successfully) scheduled|manage your posts/i.test(page)) {
           ok = true;
@@ -1431,7 +1431,7 @@ function run(argv) {
   const here = argv[argv.length - 1] || ".";
   U = eval(`(function () { var module = { exports: {} }; ${readText(here + "/upload-rules.js")}
     return module.exports; })()`);
-  log(`(Upload version 11-12a, rules ${U.RULES_VERSION || "old"})`);
+  log(`(Upload version 11-12b, rules ${U.RULES_VERSION || "old"})`);
   if (!["youtube", "facebook", "tiktok"].includes(platform)) return `Uploading to ${platform} isn't built yet.`;
 
   const record = JSON.parse(readText(UPLOADS_FILE) || '{"uploads":[]}');
@@ -1563,7 +1563,7 @@ function run(argv) {
   for (const [n, group] of groups.entries()) {
     if (n > 0 && pause > 0) {
       log(`  waiting ${pause} minute(s) before the next folder...`);
-      delay(pause * 60);
+      nap(pause * 60);
     }
     if (exists(STOP_FILE)) {
       log(`STOPPED by you after ${done} of ${items.length}.`);
