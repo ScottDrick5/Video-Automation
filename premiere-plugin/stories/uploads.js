@@ -416,11 +416,14 @@ function pickAllIn(folder, firstFile) {
 // YouTube Studio's Content list (your uploads, newest first), where each draft has an "Edit draft" button
 const YT_CONTENT = `https://studio.youtube.com/channel/${YT_CHANNEL}/videos/upload`;
 // Page code: the Content list's row for a title, preferring a draft (one with "Edit draft") over a video with the
-// same title that's already scheduled or published
+// same title that's already scheduled or published. Compared on letters and numbers only: YouTube names a new draft
+// after its file but drops some punctuation ("AITA - My Sister's ..." shows as "AITA My Sister's ...").
 const ROW_JS = `
   function editDraftButton(r) { return everything(r).find((e) => e.children.length === 0 && /^edit draft$/i.test((e.textContent || "").trim())) || null; }
+  function squash(t) { return String(t || "").toLowerCase().replace(/[^a-z0-9]/g, ""); }
   function rowFor(title) {
-    const rows = everything(document).filter((e) => e.tagName === "YTCP-VIDEO-ROW" && visible(e) && (e.innerText || "").includes(title));
+    const want = squash(title);
+    const rows = everything(document).filter((e) => e.tagName === "YTCP-VIDEO-ROW" && visible(e) && squash(e.innerText).includes(want));
     return rows.find((r) => editDraftButton(r)) || rows[0] || null;
   }`;
 
@@ -1431,7 +1434,7 @@ function run(argv) {
   const here = argv[argv.length - 1] || ".";
   U = eval(`(function () { var module = { exports: {} }; ${readText(here + "/upload-rules.js")}
     return module.exports; })()`);
-  log(`(Upload version 11-12b, rules ${U.RULES_VERSION || "old"})`);
+  log(`(Upload version 11-12c, rules ${U.RULES_VERSION || "old"})`);
   if (!["youtube", "facebook", "tiktok"].includes(platform)) return `Uploading to ${platform} isn't built yet.`;
 
   const record = JSON.parse(readText(UPLOADS_FILE) || '{"uploads":[]}');
