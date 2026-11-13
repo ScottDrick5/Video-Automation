@@ -210,8 +210,8 @@ function weekBatch(start, taken) {
 }
 
 // The order to fill a batch's dates in, so the most upvoted stories land on the busiest days: Friday first (it gets
-// the week's top story), then Saturday (the second), then the other dates in calendar order.
-const BEST_DAYS = [5, 6]; // getDay(): Friday 5, Saturday 6
+// the week's top story), then Saturday (the second), then Monday (the third), then the other dates in calendar order.
+const BEST_DAYS = [5, 6, 1]; // getDay(): Friday 5, Saturday 6, Monday 1
 function bestDaysFirst(dates) {
   const day = (name) => {
     const m = String(name).match(/^(\d{1,2})-(\d{1,2})-(\d{2}|\d{4})$/);

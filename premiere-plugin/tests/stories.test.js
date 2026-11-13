@@ -113,11 +113,13 @@ test("the page's 'ChatGPT said:' label is never taken as the title", () => {
   assert.strictEqual(r.favoriteTitle("ChatGPT said:"), null);
 });
 
-test("the top stories go to Friday and Saturday, the rest in calendar order", () => {
+test("the top stories go to Friday, Saturday and Monday, the rest in calendar order", () => {
   // 11-09-26 is a Monday ... 11-15-26 a Sunday
   const week = ["11-09-26", "11-10-26", "11-11-26", "11-12-26", "11-13-26", "11-14-26", "11-15-26"];
   assert.deepStrictEqual(r.bestDaysFirst(week), ["11-13-26", "11-14-26", "11-09-26", "11-10-26", "11-11-26", "11-12-26", "11-15-26"]);
   // a part week without Friday: unchanged
   assert.deepStrictEqual(r.bestDaysFirst(["11-14-26", "11-15-26"]), ["11-14-26", "11-15-26"]);
+  // Monday comes third even when it isn't the first other date (a batch from Sunday to the next Saturday)
+  assert.deepStrictEqual(r.bestDaysFirst(["11-15-26", "11-16-26", "11-17-26", "11-20-26", "11-21-26"]), ["11-20-26", "11-21-26", "11-16-26", "11-15-26", "11-17-26"]);
   assert.deepStrictEqual(r.bestDaysFirst(["11-11-26", "11-12-26"]), ["11-11-26", "11-12-26"]);
 });
