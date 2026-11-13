@@ -604,7 +604,7 @@ function run(argv) {
   const dates = asked ? R.nextFreeDates(new Date(), taken, asked) : R.weekBatch(new Date(), taken);
   const count = dates.length;
 
-  log("(Get Stories version 11-12a)");
+  log("(Get Stories version 11-13a)");
   log(`=== Getting ${count} stor${count === 1 ? "y" : "ies"} for ${dates.join(", ")}`);
   let posts;
   try {
@@ -616,11 +616,15 @@ function run(argv) {
   log(`Reddit: ${posts.length} posts this week, ${picked.length} usable (skipped ${skipped.length})`);
   skipped.slice(0, 15).forEach((s) => log(`  skipped "${s.post.title.slice(0, 70)}": ${s.reason}`));
 
+  // the top stories go to Friday and Saturday: fill those dates first, then the rest in order
+  const order = R.bestDaysFirst(dates);
+  if (order.join() !== dates.join()) log(`  the top stories go to Friday and Saturday: filling ${order.join(", ")} in that order`);
+
   let made = 0;
   let next = 0;
   const flaggedTitles = [];
   const checkTitles = () => (flaggedTitles.length ? ` CHECK TITLES: ${flaggedTitles.join(", ")}.` : "");
-  for (const folder of dates) {
+  for (const folder of order) {
     if (exists(STOP_FILE)) {
       log(`STOPPED by you after ${made} of ${count} stories.`);
       return `Stopped by you after ${made} of ${count} stories.${checkTitles()}`;

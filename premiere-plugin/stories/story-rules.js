@@ -209,6 +209,21 @@ function weekBatch(start, taken) {
   return out;
 }
 
+// The order to fill a batch's dates in, so the most upvoted stories land on the busiest days: Friday first (it gets
+// the week's top story), then Saturday (the second), then the other dates in calendar order.
+const BEST_DAYS = [5, 6]; // getDay(): Friday 5, Saturday 6
+function bestDaysFirst(dates) {
+  const day = (name) => {
+    const m = String(name).match(/^(\d{1,2})-(\d{1,2})-(\d{2}|\d{4})$/);
+    return m ? new Date(Number(m[3].length === 2 ? "20" + m[3] : m[3]), Number(m[1]) - 1, Number(m[2])).getDay() : -1;
+  };
+  const rank = (name) => {
+    const i = BEST_DAYS.indexOf(day(name));
+    return i < 0 ? BEST_DAYS.length : i;
+  };
+  return dates.map((d, i) => ({ d, i })).sort((a, b) => rank(a.d) - rank(b.d) || a.i - b.i).map((x) => x.d);
+}
+
 // A voiceover download from the AI Voice Saver extension: chatgpt-<voice>-<date>.<ext>
 function isVoiceoverFile(name) {
   return /^chatgpt-[a-z]+-.*\.(aac|mp3|wav|m4a|opus|ogg)$/i.test(name);
@@ -226,6 +241,7 @@ function isLimitMessage(text) {
 
 if (typeof module !== "undefined") {
   module.exports = {
+    bestDaysFirst,
     SKIP_WARNINGS, MIN_WORDS, MAX_WORDS, cleanPostText, wordCount, contentWarnings, skipReason, pickStories,
     FLAG_TITLE_WORDS, flaggedTitleWord, perspectiveOf, cleanTitle, topPick, favoriteTitle, folderName, nextFreeDates, weekBatch, isVoiceoverFile, voiceOfFile, isLimitMessage,
   };
