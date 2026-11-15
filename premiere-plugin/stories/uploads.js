@@ -131,8 +131,35 @@ function front(id) {
   nap(0.6);
 }
 
+// Stop the page from asking "Leave site? Changes you made may not be saved" when its tab is closed or moved to
+// another page. Only used once the work in that tab is done (uploads finished, draft scheduled), or when you
+// pressed Stop. A listener that catches the "leaving" event first and stops it before the site's own ones run.
+const NO_LEAVE_PROMPT_JS = `(function () {
+  if (!window.__vaNoLeave) {
+    window.__vaNoLeave = true;
+    window.addEventListener("beforeunload", (e) => { e.stopImmediatePropagation(); }, true);
+    // and if the site's own code still gets to run, its request for the box is ignored
+    try {
+      BeforeUnloadEvent.prototype.preventDefault = function () {};
+      Object.defineProperty(BeforeUnloadEvent.prototype, "returnValue", { configurable: true, get() { return ""; }, set() {} });
+    } catch (e) {
+      // older browser
+    }
+  }
+  window.onbeforeunload = null;
+  return "ok";
+})()`;
+function noLeavePrompt(id) {
+  try {
+    js(id, NO_LEAVE_PROMPT_JS);
+  } catch (e) {
+    // the tab is gone
+  }
+}
+
 function closeTab(id) {
   try {
+    noLeavePrompt(id);
     findTab(id).t.close();
   } catch (e) {
     // already closed
@@ -472,6 +499,7 @@ function contentLists(item) {
 
 // Open one Content list and wait until its rows show (or there are none)
 function openContent(id, url) {
+  noLeavePrompt(id);
   js(id, `location.href = ${JSON.stringify(url || YT_CONTENT + DRAFTS_ONLY)}; "ok"`);
   waitLoaded(id);
   const end = Date.now() + 10000; // a drafts-only list may have no rows at all
@@ -1555,7 +1583,7 @@ function run(argv) {
     const names = [...new Set(gone.map((x) => x.key.split("|")[2]))];
     return `Forgot ${names.length} video(s) on ${plat} in ${folder}${names.length ? ": " + names.join(", ") : ""}. The next run uploads them again.`;
   }
-  log(`(Upload version 11-15a, rules ${U.RULES_VERSION || "old"})`);
+  log(`(Upload version 11-15b, rules ${U.RULES_VERSION || "old"})`);
   if (!["youtube", "facebook", "tiktok"].includes(platform)) return `Uploading to ${platform} isn't built yet.`;
 
   const record = JSON.parse(readText(UPLOADS_FILE) || '{"uploads":[]}');
