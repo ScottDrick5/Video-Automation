@@ -569,9 +569,22 @@ function youtubeFolder(group, remember, review) {
       }
       uploaded = true;
       uploading = false;
-      log(`  all ${todo.length} uploaded as drafts${LIMIT_TEXT.test(text) ? " (YouTube says the upload limit was reached for some)" : ""}` +
-        " (the upload tab stays open until YouTube has finished with them)");
-      nap(2);
+      log(`  all ${todo.length} uploaded as drafts${LIMIT_TEXT.test(text) ? " (YouTube says the upload limit was reached for some)" : ""}`);
+      // YouTube won't open a draft for editing while the upload window still holds it, so once nothing is still
+      // uploading, close the upload tab (closing it any earlier would cancel the uploads)
+      waitForUploads(up, 30);
+      if (!STILL_UPLOADING.test(js(up, "document.body.innerText"))) {
+        try {
+          jsClick(up, ["#close-button", "#ytcp-uploads-dialog-close-button", 'ytcp-button[aria-label="Close"]'], "the upload window's close button");
+        } catch (e) {
+          // it may have closed by itself
+        }
+        nap(2);
+        closeTab(up);
+        up = null;
+        log("  uploads finished; closed the upload window");
+      }
+      nap(3);
     }
     uploaded = true;
 
@@ -1542,7 +1555,7 @@ function run(argv) {
     const names = [...new Set(gone.map((x) => x.key.split("|")[2]))];
     return `Forgot ${names.length} video(s) on ${plat} in ${folder}${names.length ? ": " + names.join(", ") : ""}. The next run uploads them again.`;
   }
-  log(`(Upload version 11-12h, rules ${U.RULES_VERSION || "old"})`);
+  log(`(Upload version 11-15a, rules ${U.RULES_VERSION || "old"})`);
   if (!["youtube", "facebook", "tiktok"].includes(platform)) return `Uploading to ${platform} isn't built yet.`;
 
   const record = JSON.parse(readText(UPLOADS_FILE) || '{"uploads":[]}');
