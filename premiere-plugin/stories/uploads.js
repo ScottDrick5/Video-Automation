@@ -613,7 +613,8 @@ function youtubeFolder(group, remember, review) {
       for (;;) {
         nap(5);
         text = js(up, "document.body.innerText");
-        const pcts = text.match(/uploading\s*\d+\s*%/gi);
+        // YouTube writes progress as "Uploading 26%", "26% uploaded" or "Uploading 5 of 5"
+        const pcts = text.match(/uploading\s*\d+\s*%|\b\d{1,2}\s*%\s*uploaded|uploading \d+ of \d+/gi);
         const done = /upload complete|processing|checks complete|uploads complete/i.test(text);
         if (done && !pcts) {
           // finished; YouTube may still say "Waiting" for a moment, so give that 20 seconds at most
@@ -761,7 +762,8 @@ function youtubeFolder(group, remember, review) {
 }
 
 // Wait (up to `minutes`) until nothing in the upload tab is still uploading. No upload tab: just wait 30 seconds.
-const STILL_UPLOADING = /uploading\s*\d+\s*%|\bwaiting\b|upload(ing)? (in progress|starting)/i;
+// still uploading: "Uploading 26%", "26% uploaded" (not 100%), "Uploading 5 of 5", "Waiting", "upload starting"
+const STILL_UPLOADING = /uploading\s*\d+\s*%|\b\d{1,2}\s*%\s*uploaded|uploading \d+ of \d+|\bwaiting\b|upload(ing)? (in progress|starting)/i;
 function waitForUploads(up, minutes) {
   if (up === null) {
     nap(30);
@@ -1619,7 +1621,7 @@ function run(argv) {
     const names = [...new Set(gone.map((x) => x.key.split("|")[2]))];
     return `Forgot ${names.length} video(s) on ${plat} in ${folder}${names.length ? ": " + names.join(", ") : ""}. The next run uploads them again.`;
   }
-  log(`(Upload version 11-15c, rules ${U.RULES_VERSION || "old"})`);
+  log(`(Upload version 11-15d, rules ${U.RULES_VERSION || "old"})`);
   if (!["youtube", "facebook", "tiktok"].includes(platform)) return `Uploading to ${platform} isn't built yet.`;
 
   const record = JSON.parse(readText(UPLOADS_FILE) || '{"uploads":[]}');
