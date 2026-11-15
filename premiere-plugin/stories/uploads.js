@@ -390,11 +390,47 @@ function fillAndSchedule(id, item, review, limitShown) {
     }
     noStop(() => {
       jsClick(id, ["#done-button"], 'the "Schedule" button');
-      nap(4);
-      const after = js(id, "document.body.innerText.slice(0, 3000)");
-      if (!/scheduled|video published|video saved/i.test(after)) log("  (couldn't confirm the \"Video scheduled\" message; check YouTube Studio)");
+      // If YouTube is still checking the video it shows "We're still checking your content" with "Got it": the
+      // video isn't scheduled until that's pressed. Done when YouTube says it's scheduled or the window closes.
+      const detailsOpen = () => has(id, ["#title-textarea #textbox", "#title-textarea [contenteditable]", "#done-button"]);
+      const until = Date.now() + 90000;
+      let confirmed = false;
+      let pressedGotIt = false;
+      while (Date.now() < until) {
+        nap(2);
+        const page = js(id, "document.body.innerText.slice(0, 8000)");
+        if (/still checking your content/i.test(page) && has(id, ["text:Got it"])) {
+          jsClick(id, ["text:Got it"], 'the "Got it" button');
+          if (!pressedGotIt) log('  YouTube is still checking the video; pressed "Got it" (the schedule stays)');
+          // if the details window is still there a moment later (not scheduled yet), press Schedule once more
+          if (!pressedGotIt) {
+            nap(4);
+            const now = js(id, "document.body.innerText.slice(0, 8000)");
+            if (!/video scheduled|scheduled for|video published|video saved/i.test(now) && !/still checking your content/i.test(now) &&
+                has(id, ["#done-button"])) {
+              jsClick(id, ["#done-button"], 'the "Schedule" button');
+            }
+          }
+          pressedGotIt = true;
+          continue;
+        }
+        if (/video scheduled|scheduled for|video published|video saved/i.test(page) || !detailsOpen()) {
+          confirmed = true;
+          break;
+        }
+      }
+      if (!confirmed) {
+        throw new Error(`Pressed Schedule for "${item.title}", but YouTube didn't confirm it. Check it in YouTube Studio ` +
+          "(if it's still a draft, the next run finishes it)");
+      }
+      // close YouTube's "Video scheduled" window if it shows
+      try {
+        jsClick(id, ["ytcp-button#close-button", "#close-button", 'ytcp-button[aria-label="Close"]'], "the close button");
+      } catch (e) {
+        // already closed
+      }
       log(`  scheduled on YouTube for ${day} ${time}`);
-      nap(3);
+      nap(2);
     });
   return false;
 }
@@ -1583,7 +1619,7 @@ function run(argv) {
     const names = [...new Set(gone.map((x) => x.key.split("|")[2]))];
     return `Forgot ${names.length} video(s) on ${plat} in ${folder}${names.length ? ": " + names.join(", ") : ""}. The next run uploads them again.`;
   }
-  log(`(Upload version 11-15b, rules ${U.RULES_VERSION || "old"})`);
+  log(`(Upload version 11-15c, rules ${U.RULES_VERSION || "old"})`);
   if (!["youtube", "facebook", "tiktok"].includes(platform)) return `Uploading to ${platform} isn't built yet.`;
 
   const record = JSON.parse(readText(UPLOADS_FILE) || '{"uploads":[]}');
