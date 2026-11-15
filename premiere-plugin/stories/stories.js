@@ -347,6 +347,40 @@ function ask(id, text, ready) {
     throw new ChatGPTNotReady(`Couldn't press ChatGPT's send button (${sent}; ${info})`);
   }
 
+  // Make sure ChatGPT really took the message: its box empties when it does. If the text is still sitting there
+  // (the click didn't land, e.g. ChatGPT was still busy or a banner was in the way), press send again, then Return.
+  const leftInBox = () => Number(js(id, `(function () {
+    ${FIND_EDITOR_JS}
+    const ed = findEditor();
+    return String(ed ? (ed.value || ed.innerText || "").trim().length : 0);
+  })()`)) || 0;
+  const stillThere = () => leftInBox() > Math.min(20, text.length * 0.5);
+  const tookIt = () => {
+    for (let i = 0; i < 6; i++) {
+      wait(1);
+      if (!stillThere()) return true;
+    }
+    return false;
+  };
+  if (!tookIt()) {
+    log("  the message is still in ChatGPT's box; pressing send again...");
+    js(id, `(function () {
+      const b = document.querySelector('[data-testid="send-button"], #composer-submit-button, button[aria-label="Send prompt"]');
+      if (b && !b.disabled) b.click();
+    })()`);
+    if (!tookIt()) {
+      log("  still not sent; pressing Return in the box...");
+      showTab(id);
+      js(id, `(function () { ${FIND_EDITOR_JS} const ed = findEditor(); if (ed) ed.focus(); })()`);
+      wait(0.5);
+      Application("System Events").keyCode(36); // Return, with the real keyboard
+      if (!tookIt()) {
+        throw new ChatGPTNotReady("The message was typed into ChatGPT's box but wouldn't send (it's still in the box). " +
+          "Check the ChatGPT tab for a pop-up or banner in the way");
+      }
+    }
+  }
+
   // wait for the reply to start...
   log("  sent; waiting for ChatGPT's reply...");
   const sentEnd = text.trim().slice(-200);
@@ -604,7 +638,7 @@ function run(argv) {
   const dates = asked ? R.nextFreeDates(new Date(), taken, asked) : R.weekBatch(new Date(), taken);
   const count = dates.length;
 
-  log("(Get Stories version 11-13b)");
+  log("(Get Stories version 11-15a)");
   log(`=== Getting ${count} stor${count === 1 ? "y" : "ies"} for ${dates.join(", ")}`);
   let posts;
   try {
