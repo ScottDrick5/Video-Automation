@@ -1621,7 +1621,7 @@ function run(argv) {
     const names = [...new Set(gone.map((x) => x.key.split("|")[2]))];
     return `Forgot ${names.length} video(s) on ${plat} in ${folder}${names.length ? ": " + names.join(", ") : ""}. The next run uploads them again.`;
   }
-  log(`(Upload version 11-15d, rules ${U.RULES_VERSION || "old"})`);
+  log(`(Upload version 11-23a, rules ${U.RULES_VERSION || "old"})`);
   if (!["youtube", "facebook", "tiktok"].includes(platform)) return `Uploading to ${platform} isn't built yet.`;
 
   const record = JSON.parse(readText(UPLOADS_FILE) || '{"uploads":[]}');
@@ -1637,6 +1637,21 @@ function run(argv) {
     .filter((f) => f.files.some((x) => /^vidauto-done\.txt$/i.test(x)) ||
       (f.files.some((x) => /\(full video\)\.mp4$/i.test(x)) && f.files.some((x) => /\(part 1\)\.mp4$/i.test(x))))
     .filter((f) => U.folderDay(f.name) >= new Date(new Date().setHours(0, 0, 0, 0)));
+  // today's folder counts only if its videos were made today (the finished-marker, else the full video, was written
+  // today); otherwise it's assumed to have been posted by hand
+  const todayStart = new Date(new Date().setHours(0, 0, 0, 0));
+  for (const f of folders) {
+    if (U.folderDay(f.name).getTime() !== todayStart.getTime()) continue;
+    const marker = f.files.find((x) => /^vidauto-done\.txt$/i.test(x)) || f.files.find((x) => /\(full video\)\.mp4$/i.test(x));
+    let made = 0;
+    try {
+      made = marker ? Number(sh(`stat -f %m ${q(`${CLIPS_DIR}/${f.name}/${marker}`)}`)) || 0 : 0;
+    } catch (e) {
+      // no file info: treated as not made today
+    }
+    f.madeToday = made * 1000 >= todayStart.getTime();
+    if (f.madeToday) log(`  ${f.name}: made today, so today's slots that are still ahead are scheduled`);
+  }
   const missing = new Set();
   for (const f of folders) {
     const c = creditFor(f.name);

@@ -51,6 +51,10 @@ test("Facebook gets only the full video at 1:30 PM; done uploads and past times 
   const today = u.uploadPlan("youtube", [{ name: "9-29-26", files, credit: "Orbital" }], new Set(), noon);
   assert.deepStrictEqual(today.items, []);
   assert.match(today.skipped[0], /9-29-26: today's videos aren't scheduled/);
+  // ...unless the videos were made today: then the slots that are still ahead go up, earlier ones are post-by-hand
+  const madeToday = u.uploadPlan("youtube", [{ name: "9-29-26", files, credit: "Orbital", madeToday: true }], new Set(), noon);
+  assert.deepStrictEqual(madeToday.items.map((i) => u.studioTime(i.when)), ["1:30 PM", "3:30 PM"]);
+  assert.ok(madeToday.skipped.some((s) => /Full Video.*due too soon or already past/.test(s)));
   const tomorrow = u.uploadPlan("tiktok", [{ name: "9-29-26", files, credit: "Orbital" }, { name: "9-30-26", files, credit: "Orbital" }], new Set(), noon);
   assert.ok(tomorrow.items.length > 0 && tomorrow.items.every((i) => i.folder === "9-30-26"));
 });

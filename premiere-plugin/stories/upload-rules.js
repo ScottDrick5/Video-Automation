@@ -1,7 +1,7 @@
 // Rules for the Upload step (which videos go where and when, titles and descriptions). Plain JavaScript with no
 // Mac or browser parts, so it can be tested with Node and loaded by uploads.js on the Mac.
 
-const RULES_VERSION = "11-11b"; // shown in the upload log, to check the newest copy is installed
+const RULES_VERSION = "11-23a"; // shown in the upload log, to check the newest copy is installed
 
 // Posting times (Eastern), [hour, minute] on the date folder's date
 const TIMES = {
@@ -53,8 +53,10 @@ function creditFromAuthor(author) {
   return a.split(/\s+[-–|]\s+/)[0].trim() || null;
 }
 
-// Everything to upload to one platform, earliest first. Starts with tomorrow's folder: today's videos are never
-// scheduled (post those by hand).
+// Everything to upload to one platform, earliest first. Today's folder is scheduled only when its videos were made
+// today (folder.madeToday, set by uploads.js): the slots still at least 15 minutes ahead go up, earlier ones are
+// "post by hand". A today's folder made earlier is assumed to have been posted by hand, so uploads then start with
+// tomorrow's.
 // folders: [{ name, files: [...], credit }] (finished date folders); uploaded: Set of keys already done;
 // now: Date. Returns { items: [{ key, folder, file, title, description, when }], skipped: [text] }
 function uploadPlan(platform, folders, uploaded, now) {
@@ -65,9 +67,11 @@ function uploadPlan(platform, folders, uploaded, now) {
   for (const f of folders) {
     const day = folderDay(f.name);
     if (!day) continue;
-    if (day <= today) {
-      if (day.getTime() === today.getTime() && f.files.some((x) => videoInfo(x))) {
-        skipped.push(`${f.name}: today's videos aren't scheduled (uploads start with tomorrow's); post them by hand`);
+    if (day < today) continue;
+    if (day.getTime() === today.getTime() && !f.madeToday) {
+      if (f.files.some((x) => videoInfo(x))) {
+        skipped.push(`${f.name}: today's videos aren't scheduled because they weren't made today (assumed posted by hand; ` +
+          "uploads start with tomorrow's). If you do want them uploaded, run Make videos again so they're made today");
       }
       continue;
     }
