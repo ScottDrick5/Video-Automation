@@ -1621,7 +1621,7 @@ function run(argv) {
     const names = [...new Set(gone.map((x) => x.key.split("|")[2]))];
     return `Forgot ${names.length} video(s) on ${plat} in ${folder}${names.length ? ": " + names.join(", ") : ""}. The next run uploads them again.`;
   }
-  log(`(Upload version 11-23a, rules ${U.RULES_VERSION || "old"})`);
+  log(`(Upload version 11-23c, rules ${U.RULES_VERSION || "old"})`);
   if (!["youtube", "facebook", "tiktok"].includes(platform)) return `Uploading to ${platform} isn't built yet.`;
 
   const record = JSON.parse(readText(UPLOADS_FILE) || '{"uploads":[]}');
@@ -1631,14 +1631,20 @@ function run(argv) {
   // ("draft finished by hand" was written by version 11-12a-d when it couldn't see a draft: those are looked for again)
   const leftAsDraft = (k) => platform === "youtube" && /^draft (on YouTube|finished by hand)/i.test(lastNote[k] || "");
   const uploaded = new Set(Object.keys(lastNote).filter((k) => !leftAsDraft(k)));
+  // finished folders from today on. A folder with videos but no vidauto-done.txt wasn't finished (an export was
+  // cancelled or failed partway: some parts missing, one possibly cut short), so none of it is uploaded
+  const unfinished = [];
   const folders = listDir(CLIPS_DIR)
     .filter((n) => U.folderDay(n))
     .map((n) => ({ name: n, files: listDir(`${CLIPS_DIR}/${n}`) }))
-    .filter((f) => f.files.some((x) => /^vidauto-done\.txt$/i.test(x)) ||
-      (f.files.some((x) => /\(full video\)\.mp4$/i.test(x)) && f.files.some((x) => /\(part 1\)\.mp4$/i.test(x))))
-    .filter((f) => U.folderDay(f.name) >= new Date(new Date().setHours(0, 0, 0, 0)));
-  // today's folder counts only if its videos were made today (the finished-marker, else the full video, was written
-  // today); otherwise it's assumed to have been posted by hand
+    .filter((f) => U.folderDay(f.name) >= new Date(new Date().setHours(0, 0, 0, 0)))
+    .filter((f) => {
+      if (f.files.some((x) => /^vidauto-done\.txt$/i.test(x))) return true;
+      if (f.files.some((x) => /\(full video\)\.mp4$/i.test(x)) && f.files.some((x) => /\(part 1\)\.mp4$/i.test(x))) unfinished.push(f.name);
+      return false;
+    });
+  // when today's folder was made (its finished-marker, else the full video): made in the last 24 hours, or no slot
+  // of today having passed yet, means it hasn't been posted by hand; otherwise it's assumed it was
   const todayStart = new Date(new Date().setHours(0, 0, 0, 0));
   for (const f of folders) {
     if (U.folderDay(f.name).getTime() !== todayStart.getTime()) continue;
@@ -1649,8 +1655,9 @@ function run(argv) {
     } catch (e) {
       // no file info: treated as not made today
     }
-    f.madeToday = made * 1000 >= todayStart.getTime();
-    if (f.madeToday) log(`  ${f.name}: made today, so today's slots that are still ahead are scheduled`);
+    f.madeAt = made * 1000;
+    const hoursAgo = Math.round((Date.now() - f.madeAt) / 3600000);
+    if (made && hoursAgo < 24) log(`  ${f.name}: made ${hoursAgo} hour(s) ago, so today's slots that are still ahead are scheduled`);
   }
   const missing = new Set();
   for (const f of folders) {
@@ -1681,6 +1688,8 @@ function run(argv) {
   folders.forEach((f) => log(`  ${f.name}: gameplay credit "${f.credit || "?"}" (${f.creditNote})`));
   missing.forEach((m) => log(`  NO CREDIT for ${m}: in the VidAuto panel type the creator's name next to "Gameplay credit" and click Set, then run Upload again.`));
   plan.skipped.forEach((s) => log(`  skipped: ${s}`));
+  unfinished.forEach((n) => log(`  skipped: ${n}: its videos weren't all finished (no vidauto-done.txt: an export was probably cancelled or ` +
+    "failed), so none of it is uploaded. Finish or remake it; or, to upload what's there anyway, create that file (Terminal: touch it)"));
   if (!items.length) {
     // say why, so "nothing to upload" doesn't look like the upload did nothing
     const why = [];

@@ -52,9 +52,20 @@ test("Facebook gets only the full video at 1:30 PM; done uploads and past times 
   assert.deepStrictEqual(today.items, []);
   assert.match(today.skipped[0], /9-29-26: today's videos aren't scheduled/);
   // ...unless the videos were made today: then the slots that are still ahead go up, earlier ones are post-by-hand
-  const madeToday = u.uploadPlan("youtube", [{ name: "9-29-26", files, credit: "Orbital", madeToday: true }], new Set(), noon);
-  assert.deepStrictEqual(madeToday.items.map((i) => u.studioTime(i.when)), ["1:30 PM", "3:30 PM"]);
-  assert.ok(madeToday.skipped.some((s) => /Full Video.*due too soon or already past/.test(s)));
+  const made = (hoursAgo) => noon.getTime() - hoursAgo * 3600000;
+  const recent = u.uploadPlan("youtube", [{ name: "9-29-26", files, credit: "Orbital", madeAt: made(3) }], new Set(), noon);
+  assert.deepStrictEqual(recent.items.map((i) => u.studioTime(i.when)), ["1:30 PM", "3:30 PM"]);
+  assert.ok(recent.skipped.some((s) => /Full Video.*due too soon or already past/.test(s)));
+  // made 30 hours ago and part of the day already gone: assumed posted by hand
+  const old = u.uploadPlan("youtube", [{ name: "9-29-26", files, credit: "Orbital", madeAt: made(30) }], new Set(), noon);
+  assert.deepStrictEqual(old.items, []);
+  // made last night, uploaded just after midnight: no slot has arrived yet, so the whole day goes up
+  const night = u.uploadPlan("youtube", [{ name: "9-29-26", files, credit: "Orbital", madeAt: new Date(2026, 8, 28, 22, 28).getTime() }],
+    new Set(), new Date(2026, 8, 29, 1, 34));
+  assert.deepStrictEqual(night.items.map((i) => u.studioTime(i.when)), ["11:30 AM", "1:30 PM", "3:30 PM"]);
+  // ...even if the made-time is unknown
+  const unknown = u.uploadPlan("tiktok", [{ name: "9-29-26", files, credit: "Orbital" }], new Set(), new Date(2026, 8, 29, 8, 0));
+  assert.deepStrictEqual(unknown.items.map((i) => u.studioTime(i.when)), ["11:30 AM", "1:30 PM", "3:30 PM"]);
   const tomorrow = u.uploadPlan("tiktok", [{ name: "9-29-26", files, credit: "Orbital" }, { name: "9-30-26", files, credit: "Orbital" }], new Set(), noon);
   assert.ok(tomorrow.items.length > 0 && tomorrow.items.every((i) => i.folder === "9-30-26"));
 });

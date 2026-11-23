@@ -1,7 +1,7 @@
 // Rules for the Upload step (which videos go where and when, titles and descriptions). Plain JavaScript with no
 // Mac or browser parts, so it can be tested with Node and loaded by uploads.js on the Mac.
 
-const RULES_VERSION = "11-23a"; // shown in the upload log, to check the newest copy is installed
+const RULES_VERSION = "11-23b"; // shown in the upload log, to check the newest copy is installed
 
 // Posting times (Eastern), [hour, minute] on the date folder's date
 const TIMES = {
@@ -53,10 +53,11 @@ function creditFromAuthor(author) {
   return a.split(/\s+[-–|]\s+/)[0].trim() || null;
 }
 
-// Everything to upload to one platform, earliest first. Today's folder is scheduled only when its videos were made
-// today (folder.madeToday, set by uploads.js): the slots still at least 15 minutes ahead go up, earlier ones are
-// "post by hand". A today's folder made earlier is assumed to have been posted by hand, so uploads then start with
-// tomorrow's.
+// Everything to upload to one platform, earliest first. Today's folder is scheduled (its slots still at least
+// 15 minutes ahead; earlier ones are "post by hand") when it can't have been posted by hand yet: none of its
+// posting slots has arrived (e.g. made last night, uploaded after midnight), or its videos were made in the last
+// 24 hours (folder.madeAt, in ms, set by uploads.js). Otherwise it's assumed to have been posted by hand and
+// uploads start with tomorrow's.
 // folders: [{ name, files: [...], credit }] (finished date folders); uploaded: Set of keys already done;
 // now: Date. Returns { items: [{ key, folder, file, title, description, when }], skipped: [text] }
 function uploadPlan(platform, folders, uploaded, now) {
@@ -68,12 +69,19 @@ function uploadPlan(platform, folders, uploaded, now) {
     const day = folderDay(f.name);
     if (!day) continue;
     if (day < today) continue;
-    if (day.getTime() === today.getTime() && !f.madeToday) {
-      if (f.files.some((x) => videoInfo(x))) {
-        skipped.push(`${f.name}: today's videos aren't scheduled because they weren't made today (assumed posted by hand; ` +
-          "uploads start with tomorrow's). If you do want them uploaded, run Make videos again so they're made today");
+    if (day.getTime() === today.getTime()) {
+      const slots = [times.full, ...times.parts].filter(Boolean)
+        .map(([h, m]) => new Date(day.getFullYear(), day.getMonth(), day.getDate(), h, m).getTime());
+      const untouched = slots.length > 0 && Math.min(...slots) > now.getTime() + 15 * 60000;
+      const recent = !!f.madeAt && f.madeAt >= now.getTime() - 24 * 3600000;
+      if (!untouched && !recent) {
+        if (f.files.some((x) => videoInfo(x))) {
+          skipped.push(`${f.name}: today's videos aren't scheduled: part of today has already passed and they weren't made in the ` +
+            "last 24 hours, so they're assumed posted by hand (uploads start with tomorrow's). To include them anyway, update the " +
+            "date of that folder's vidauto-done.txt (Terminal: touch it)");
+        }
+        continue;
       }
-      continue;
     }
     for (const file of f.files) {
       const v = videoInfo(file);
