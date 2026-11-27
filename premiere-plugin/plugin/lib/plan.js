@@ -140,4 +140,22 @@ function formatTime(seconds) {
   return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
 }
 
-module.exports = { folderDate, foldersToDo, foldersInText, chooseSource, footageCheck, fillScale, timecodeToSeconds, videoSizeFrom, formatTime };
+// Batches: the first `batch` folders to make now and how many wait for the next batch (batch 0 or blank = all now).
+// A long Premiere session slows down, so a run can make a few videos, restart Premiere, and carry on.
+function splitBatch(todo, batch) {
+  const n = Math.floor(Number(batch)) || 0;
+  if (n > 0 && todo.length > n) return { now: todo.slice(0, n), remaining: todo.length - n };
+  return { now: todo, remaining: 0 };
+}
+
+// After Premiere restarts, the panel finds a note left by the run before it. Should it carry on?
+// note: { at (ms), runs (restarts so far) } or null. Returns "ok", "old" (left too long ago), "too many" (a loop)
+// or "none".
+function resumeDecision(note, now, maxAgeMinutes = 20, maxRuns = 12) {
+  if (!note || typeof note !== "object" || !note.at) return "none";
+  if (now - note.at > maxAgeMinutes * 60000) return "old";
+  if ((Number(note.runs) || 0) >= maxRuns) return "too many";
+  return "ok";
+}
+
+module.exports = { folderDate, foldersToDo, foldersInText, chooseSource, footageCheck, fillScale, timecodeToSeconds, videoSizeFrom, formatTime, splitBatch, resumeDecision };

@@ -6,6 +6,15 @@ and never deletes anything.
 
 ## Weekly use (one click)
 
+**Batches (Videos per batch).** A long Premiere session slows down (exports that take minutes start taking
+tens of minutes, and errors like "Accelerated Renderer Error" appear). Type a number such as 3 next to **Videos per
+batch** and Make videos makes that many, then stops; the rest wait. With **Restart Premiere between batches** ticked
+it goes on by itself: the helper saves the project (Cmd+S), quits Premiere (Cmd+Q), opens the project again, and the
+panel, loading in the new Premiere, starts the next batch (it carries on with the same upload settings; uploads wait
+for the last batch). It needs the panel to open in the restarted Premiere (leave it docked in your workspace) and
+at most 12 restarts in a row. If anything doesn't work the log says why and the run just stops: quit and reopen
+Premiere yourself and click Make videos again. Blank = make them all in one go. Both settings are remembered.
+
 **Stop** (next to Run) stops Get Stories and Upload right away (within a second; the only wait is while a final
 Schedule click is being confirmed, so nothing is half-posted). Making videos stops at its next step; an export
 that's in progress can be cancelled in Premiere. A `.command` file running in

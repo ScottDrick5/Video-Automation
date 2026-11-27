@@ -7,7 +7,7 @@ const ppro = require("premierepro");
 const uxp = require("uxp");
 const fs = uxp.storage.localFileSystem;
 const { findCutPoint, flattenWords, aholeTerms } = require("./lib/transcript.js");
-const { foldersToDo, foldersInText, chooseSource, footageCheck, fillScale, timecodeToSeconds, videoSizeFrom, formatTime } = require("./lib/plan.js");
+const { foldersToDo, foldersInText, chooseSource, footageCheck, fillScale, timecodeToSeconds, videoSizeFrom, formatTime, splitBatch, resumeDecision } = require("./lib/plan.js");
 const {
   MIN_CLIP, sequenceWords, loudnessFromWav, cutCandidates, planClips, fullArrowTimes, outputName, arrowColor,
 } = require("./lib/clips.js");
@@ -37,6 +37,8 @@ const NOTIFY_FILE = HELPER_DIR + "/notify.txt";
 const STOP_FILE = HELPER_DIR + "/stop.txt"; // the Stop button: the scripts finish their current step and stop
 const STORIES_COUNT = HELPER_DIR + "/stories-count.txt"; // how many stories (0 = the rest of the week)
 const UPLOADS_ARGS = HELPER_DIR + "/uploads-args.txt"; // "<platform> <how many, 0 = all>"
+const RESUME_FILE = HELPER_DIR + "/resume.json"; // left for the panel when Premiere is restarted between batches
+const RESTART_PROJECT_FILE = HELPER_DIR + "/restart-project.txt"; // the project to reopen after that restart
 const UPLOADS_LOG = AITA_DIR + "/vidauto-uploads-log.txt";
 const UPLOADS_FILE = AITA_DIR + "/vidauto-uploads.json"; // what's posted already, so the Upload step skips it
 const TITLE_FILE = "title.txt";
@@ -46,7 +48,7 @@ const ARROW_TRACK = 2; // V3
 const ARROW_SECONDS = 5;
 const CLIP_ARROW_AT = 5; // seconds into each clip
 const TICKS_PER_SECOND = 254016000000;
-const PLUGIN_VERSION = "0.9.5";
+const PLUGIN_VERSION = "0.9.6";
 
 const state = { clip: null, transcript: null, cut: null, sequence: null };
 
@@ -1263,7 +1265,7 @@ async function checkFootage(todo) {
 }
 
 // Stages 1-2 for every date folder with a voiceover and no full video. Returns { videos, clips, last } .
-async function makeVideos(project, withFootageCheck, onlyFolders = null, limit = 0) {
+async function makeVideos(project, withFootageCheck, onlyFolders = null, limit = 0, batch = 0) {
   for (const [path, what] of [[CLIPS_DIR, "date folders"], [SOURCE_DIR, "source videos"], [EXPORT_PRESET, "export preset"]]) {
     if (!(await exists(path))) throw new Error(`Can't find the ${what}: ${path}`);
   }
@@ -1272,8 +1274,12 @@ async function makeVideos(project, withFootageCheck, onlyFolders = null, limit =
   if (limit) todo = todo.slice(0, limit);
   if (!todo.length) {
     log("Nothing to do: every date folder with a voiceover already has its full video");
-    return { videos: 0, clips: 0, last: null };
+    return { videos: 0, clips: 0, last: null, remaining: 0 };
   }
+  // a batch: make the first few now (a long Premiere session slows down), the rest in the next batch
+  const split = splitBatch(todo, batch);
+  todo = split.now;
+  if (split.remaining) log(`Batch of ${todo.length}: ${split.remaining} more video(s) wait for the next batch`);
   log(`Videos to make: ${todo.map((f) => f.name).join(", ")}`);
   if (withFootageCheck) await checkFootage(todo);
   const usage = await loadUsage();
@@ -1287,18 +1293,87 @@ async function makeVideos(project, withFootageCheck, onlyFolders = null, limit =
     clips += last.parts;
     log(`  done: ${f.name}: ${last.fullName} and ${last.parts} clip(s). ${last.name} has ${formatTime(last.remainingAfter)} left`);
   }
-  return { videos: todo.length, clips, last };
+  return { videos: todo.length, clips, last, remaining: split.remaining };
 }
 
 // The three buttons: everything, stories only, videos only
-async function runButton(which) {
+async function deleteFile(path) {
+  try {
+    const entry = await fs.getEntryWithUrl("file:" + path);
+    await entry.delete();
+  } catch (e) {
+    // not there
+  }
+}
+
+// Between batches: the helper saves the project, quits Premiere and opens the project again; the panel, loading in
+// the new Premiere, finds RESUME_FILE and starts the next batch (resumeAfterRestart). This only returns when the
+// restart didn't happen (this panel is gone when it did).
+async function restartPremiere(project, batch, uploadAfter, runs) {
+  const projectPath = typeof project.path === "string" ? project.path : "";
+  if (!projectPath) {
+    log("  can't restart Premiere by itself: its project's file location isn't available to the panel");
+    return false;
+  }
+  const platforms = ["upYoutube", "upFacebook", "upTiktok"].filter((id) => document.getElementById(id).checked);
+  await writeTextFile(RESTART_PROJECT_FILE, projectPath + "\n");
+  await writeTextFile(RESUME_FILE, JSON.stringify({ at: Date.now(), batch, uploadAfter, platforms, runs: runs + 1, project: projectPath }));
+  await writeTextFile(UPLOADS_ARGS, "restart 0\n");
+  log("--- Restarting Premiere: it saves the project, quits and opens it again, then the next batch starts by itself");
+  setRunStatus("", "restarting Premiere... hands off the mouse and keyboard");
+  await startHelper("uploads");
+  const text = await waitForHelper(240);
+  // still here: the restart didn't happen
+  await deleteFile(RESUME_FILE);
+  log("  restart: " + ((text.match(/(RESULT|ERROR)[^\n]*/) || ["no answer from the helper"])[0].replace(/^RESULT:\s*/, "")));
+  setRunStatus("fail", "Premiere wasn't restarted");
+  return false;
+}
+
+// Loading in a freshly restarted Premiere: carry on with the next batch if the run before left a note
+async function resumeAfterRestart() {
+  let note = null;
+  try {
+    note = JSON.parse((await readTextFile(RESUME_FILE)) || "null");
+  } catch (e) {
+    note = null;
+  }
+  const decision = resumeDecision(note, Date.now());
+  if (decision === "none") return;
+  await deleteFile(RESUME_FILE); // used once, so it can never loop
+  if (decision === "old") return log("(a note from an old Premiere restart was ignored)");
+  if (decision === "too many") return log("Stopped carrying on after restarts: too many in a row. Click Make videos to continue.");
+  log(`=== Premiere restarted: the next batch starts once the project is open`);
+  setRunStatus("", "waiting for the project to open...");
+  let project = null;
+  const end = Date.now() + 5 * 60000;
+  while (Date.now() < end && !project) {
+    try {
+      project = await ppro.Project.getActiveProject();
+    } catch (e) {
+      project = null;
+    }
+    if (!project) await new Promise((r) => setTimeout(r, 3000));
+  }
+  if (!project) {
+    log("The project didn't open within 5 minutes, so the next batch wasn't started. Open it and click Make videos.");
+    return setRunStatus("fail", "the project didn't open; click Make videos to continue");
+  }
+  await new Promise((r) => setTimeout(r, 20000)); // let Premiere settle
+  for (const id of ["upYoutube", "upFacebook", "upTiktok"]) document.getElementById(id).checked = (note.platforms || []).includes(id);
+  await runButton("videos", { runs: note.runs, uploadAfter: !!note.uploadAfter });
+}
+
+async function runButton(which, opts = {}) {
   const buttons = ["run", "runStories", "runVideos", "runUploads"].map((id) => document.getElementById(id));
   buttons.forEach((b) => b.setAttribute("disabled", ""));
   document.getElementById("stop").removeAttribute("disabled");
   await clearStop();
   const testOne = document.getElementById("testOne").checked;
   const names = { all: "Run (stories, then videos)", stories: "Get stories only", videos: "Make videos only", uploads: "Upload" };
-  const uploadAfter = which === "uploads" || (which === "all" && document.getElementById("uploadAfter").checked);
+  const uploadAfter = opts.uploadAfter !== undefined ? !!opts.uploadAfter
+    : which === "uploads" || (which === "all" && document.getElementById("uploadAfter").checked);
+  const batch = testOne ? 0 : Math.max(0, Math.floor(Number(document.getElementById("batchSize").value)) || 0);
   log(`=== ${names[which]}${which === "all" && uploadAfter ? " + upload" : ""}` +
     (testOne ? " - TEST: one only" : ""));
   let stories = "";
@@ -1319,9 +1394,12 @@ async function runButton(which) {
     }
     let made = { videos: 0, clips: 0, last: null };
     checkStop();
-    if (which === "all" || which === "videos") made = await makeVideos(project, true, which === "all" && testOne ? fresh : null, testOne ? 1 : 0);
+    if (which === "all" || which === "videos") made = await makeVideos(project, true, which === "all" && testOne ? fresh : null, testOne ? 1 : 0, batch);
+    const more = made.remaining || 0;
     let uploads = "";
-    if (uploadAfter) {
+    if (uploadAfter && more) {
+      log("  (uploads wait until the last batch)");
+    } else if (uploadAfter) {
       checkStop();
       uploads = await uploadVideos(testOne);
     }
@@ -1329,12 +1407,16 @@ async function runButton(which) {
     if (which === "all" || which === "stories") parts.push(`Stories: ${stories}`);
     if (which === "all" || which === "videos") parts.push(`${made.videos} full video(s), ${made.clips} clip(s)` +
       (made.last ? `. ${made.last.name} has ${formatTime(made.last.remainingAfter)} of footage left.` : "."));
-    if (uploadAfter) parts.push(`Uploads: ${uploads}`);
-    const summary = "Done. " + parts.join(" ");
+    if (uploadAfter && !more) parts.push(`Uploads: ${uploads}`);
+    if (more) parts.push(`${more} more video(s) wait for the next batch.`);
+    const summary = (more ? "Batch done. " : "Done. ") + parts.join(" ");
     setRunStatus("ok", summary);
     log(summary);
     await showSourceStatus();
-    await notify(true, summary);
+    if (more && made.videos > 0 && document.getElementById("restartBetween").checked) {
+      await restartPremiere(project, batch, uploadAfter, opts.runs || 0); // only comes back if the restart didn't happen
+    }
+    await notify(true, more ? summary + " Quit and reopen Premiere, then click Make videos again for the rest." : summary);
   } catch (err) {
     const msg = "STOPPED: " + (err.message || err);
     setRunStatus("fail", msg);
@@ -1469,6 +1551,28 @@ STEPS.forEach(([name, fn], n) => {
   document.getElementById("b" + n).addEventListener("click", () => step(n, name, fn));
 });
 
+// The batch settings are kept for when Premiere restarts
+function loadSetting(key) {
+  try {
+    return localStorage.getItem("vidauto." + key);
+  } catch (e) {
+    return null;
+  }
+}
+function saveSetting(key, value) {
+  try {
+    localStorage.setItem("vidauto." + key, String(value));
+  } catch (e) {
+    // can't be kept; it just starts blank next time
+  }
+}
+const batchBox = document.getElementById("batchSize");
+const restartBox = document.getElementById("restartBetween");
+batchBox.value = loadSetting("batch") || "";
+restartBox.checked = loadSetting("restart") === "1";
+batchBox.addEventListener("input", () => saveSetting("batch", batchBox.value));
+restartBox.addEventListener("change", () => saveSetting("restart", restartBox.checked ? "1" : "0"));
+
 document.getElementById("run").addEventListener("click", () => runButton("all"));
 document.getElementById("runStories").addEventListener("click", () => runButton("stories"));
 document.getElementById("runVideos").addEventListener("click", () => runButton("videos"));
@@ -1478,6 +1582,7 @@ document.getElementById("setUsed").addEventListener("click", setUsedUpTo);
 document.getElementById("setCredit").addEventListener("click", setCredit);
 document.getElementById("markUploaded").addEventListener("click", markUploaded);
 showSourceStatus();
+resumeAfterRestart();
 
 document.getElementById("copy").addEventListener("click", async () => {
   await navigator.clipboard.setContent({ "text/plain": document.getElementById("log").textContent });

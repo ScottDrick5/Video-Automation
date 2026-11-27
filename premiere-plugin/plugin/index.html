@@ -16,7 +16,7 @@
     </style>
   </head>
   <body>
-    <h3>VidAuto <span class="hint">v0.9.5</span></h3>
+    <h3>VidAuto <span class="hint">v0.9.6</span></h3>
     <div class="hint">Run gets this week's stories in Chrome, then makes the full video and clips for every date folder with a voiceover but no full video yet. Open your AITA Template project and Chrome (signed in) first, and keep hands off the mouse while it runs.</div>
     <div class="step"><sp-button id="run" style="margin-right: 8px">Run</sp-button><sp-button id="stop" variant="negative" disabled>Stop</sp-button></div>
     <div class="step"><span class="status" id="runStatus"></span></div>
@@ -39,6 +39,12 @@
       <input type="checkbox" id="testOne" style="margin-right: 6px" />
       <label for="testOne">Test: just one (one story and/or one full video with its clips)</label>
     </div>
+    <div class="step">
+      Videos per batch:
+      <input type="text" id="batchSize" placeholder="all" style="width: 56px; margin: 0 8px 0 6px" />
+      <input type="checkbox" id="restartBetween" style="margin-right: 4px" /><label for="restartBetween">Restart Premiere between batches</label>
+    </div>
+    <div class="hint">A long session slows Premiere down. With 3, Make videos makes 3, then (if ticked) saves, quits and reopens Premiere with this project and carries on by itself; if not ticked it stops so you can restart Premiere yourself. Uploads wait for the last batch. Leave blank to make them all.</div>
     <div class="hint" id="sourceStatus">Source video: checking...</div>
     <div class="step">
       <input type="text" id="usedUpTo" placeholder="1:54:18" style="width: 110px; margin-right: 8px" />

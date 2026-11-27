@@ -1,7 +1,7 @@
 // Run with: node --test premiere-plugin/tests/*.test.js
 const test = require("node:test");
 const assert = require("node:assert");
-const { foldersInText, footageCheck, folderDate, foldersToDo, chooseSource, fillScale, timecodeToSeconds, videoSizeFrom, formatTime } = require("../plugin/lib/plan");
+const { foldersInText, footageCheck, folderDate, foldersToDo, chooseSource, fillScale, timecodeToSeconds, videoSizeFrom, formatTime, splitBatch, resumeDecision } = require("../plugin/lib/plan");
 
 test("folder names are read as posting dates", () => {
   assert.strictEqual(folderDate("9-25-26"), 20260925);
@@ -104,4 +104,22 @@ test("typed date folders and ranges", () => {
   assert.deepStrictEqual(foldersInText("9-30-26 and 10-02-26 through 10-03-26", names), ["9-30-26", "10-02-26", "10-03-26"]);
   assert.deepStrictEqual(foldersInText("10-1-26", names), ["10-01-26"]);
   assert.strictEqual(foldersInText("last week", names), null);
+});
+
+test("batches: the first N now, the rest wait; 0 or blank means all now", () => {
+  const todo = ["a", "b", "c", "d", "e", "f", "g"];
+  assert.deepStrictEqual(splitBatch(todo, 3), { now: ["a", "b", "c"], remaining: 4 });
+  assert.deepStrictEqual(splitBatch(todo, "4"), { now: ["a", "b", "c", "d"], remaining: 3 });
+  assert.deepStrictEqual(splitBatch(todo, 7), { now: todo, remaining: 0 });
+  assert.deepStrictEqual(splitBatch(todo, 10), { now: todo, remaining: 0 });
+  for (const none of [0, "", "0", undefined, "abc", -2]) assert.deepStrictEqual(splitBatch(todo, none), { now: todo, remaining: 0 });
+});
+
+test("after a restart: carry on only with a fresh note and not in a loop", () => {
+  const now = Date.now();
+  assert.strictEqual(resumeDecision({ at: now - 2 * 60000, runs: 1 }, now), "ok");
+  assert.strictEqual(resumeDecision({ at: now - 30 * 60000, runs: 1 }, now), "old");
+  assert.strictEqual(resumeDecision({ at: now - 60000, runs: 12 }, now), "too many");
+  assert.strictEqual(resumeDecision(null, now), "none");
+  assert.strictEqual(resumeDecision({}, now), "none");
 });

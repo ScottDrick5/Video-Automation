@@ -1599,6 +1599,45 @@ function tiktok(item, review) {
   }
 }
 
+// ------------------------------------------------------------------ restart Premiere
+
+// "restart": between batches of videos (a long Premiere session slows down). Saves the Premiere project, quits
+// Premiere and opens the project again. The project is named in restart-project.txt; the panel, loading in the new
+// Premiere, finds resume.json and starts the next batch. Anything unexpected stops it with a reason, before
+// anything is quit, where it can.
+function restartPremiere() {
+  const projectPath = (readText("/Users/Shared/VidAuto/restart-project.txt") || "").trim();
+  if (!projectPath || !exists(projectPath)) return `Couldn't restart Premiere: the project file wasn't found (${projectPath || "no path given"})`;
+  const name = keys.applicationProcesses.name().find((n) => /premiere/i.test(n));
+  if (!name) return "Couldn't restart Premiere: it isn't running";
+  const p = keys.applicationProcesses.byName(name);
+  const comm = sh(`ps -p ${p.unixId()} -o comm=`).trim();
+  const cut = comm.indexOf(".app/");
+  if (cut < 0) return "Couldn't restart Premiere: couldn't tell where it is installed";
+  const appPath = comm.slice(0, cut + 4);
+  const running = () => keys.applicationProcesses.name().some((n) => n === name);
+  const inFront = () => {
+    p.frontmost = true;
+    nap(1.5);
+    return p.frontmost();
+  };
+  nap(5); // let the last export settle
+  if (!inFront()) return "Couldn't restart Premiere: couldn't bring it to the front (nothing was changed)";
+  keys.keystroke("s", { using: "command down" }); // save the project
+  nap(4);
+  if (!inFront()) return "Couldn't restart Premiere: it wasn't in front after saving (it was not quit)";
+  keys.keystroke("q", { using: "command down" }); // quit
+  for (let i = 0; i < 20 && running(); i++) nap(1);
+  if (running()) {
+    keys.keyCode(36); // a "save changes?" question: Return is Save
+    for (let i = 0; i < 60 && running(); i++) nap(1);
+  }
+  if (running()) return "Couldn't restart Premiere: it didn't quit (is a question showing on screen?)";
+  nap(6);
+  sh(`open -a ${q(appPath)} ${q(projectPath)}`);
+  return "Premiere was restarted; the next batch starts once the project is open";
+}
+
 // ------------------------------------------------------------------ main
 
 function run(argv) {
@@ -1608,6 +1647,7 @@ function run(argv) {
   const here = argv[argv.length - 1] || ".";
   U = eval(`(function () { var module = { exports: {} }; ${readText(here + "/upload-rules.js")}
     return module.exports; })()`);
+  if (argv[0] === "restart") return restartPremiere();
   // "forget <platform> <date folder> [words,words]": take those videos out of the upload record, so the next run
   // uploads them again (e.g. ones recorded as uploaded that never made it to the site)
   if (argv[0] === "forget") {
@@ -1621,7 +1661,7 @@ function run(argv) {
     const names = [...new Set(gone.map((x) => x.key.split("|")[2]))];
     return `Forgot ${names.length} video(s) on ${plat} in ${folder}${names.length ? ": " + names.join(", ") : ""}. The next run uploads them again.`;
   }
-  log(`(Upload version 11-23c, rules ${U.RULES_VERSION || "old"})`);
+  log(`(Upload version 11-27a, rules ${U.RULES_VERSION || "old"})`);
   if (!["youtube", "facebook", "tiktok"].includes(platform)) return `Uploading to ${platform} isn't built yet.`;
 
   const record = JSON.parse(readText(UPLOADS_FILE) || '{"uploads":[]}');
